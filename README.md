@@ -1,0 +1,94 @@
+# Ftracker · Aplicación de escritorio Windows
+
+Sistema local de rondines e incidencias para FIME. Interfaz WPF con ventanas nativas: no utiliza navegador, localhost, servidor web, cookies ni conexión a internet durante su uso.
+
+## Iniciar
+
+Haz doble clic en **Iniciar-Ftracker.cmd** en esta carpeta. Busca primero `artifacts/Ftracker-actualizado/Ftracker.exe`, después `artifacts/Ftracker/Ftracker.exe` y, si no hay publicación, usa la compilación Debug. Al clonar por primera vez, ejecuta **Preparar-Ftracker.cmd** para restaurar paquetes y compilar: los ejecutables no se incluyen en Git.
+
+En el primer inicio crea tu cuenta administradora: nombre, correo y contraseña de al menos 12 caracteres. No hay contraseñas predeterminadas. En inicios posteriores aparece la ventana de acceso.
+
+## Probar el flujo completo
+
+1. Entra como administrador. En **Usuarios**, crea un usuario con rol **Prefecto**.
+2. En **Rutas y puntos**, crea una ruta y escribe sus puntos, uno por línea y en orden.
+3. En **Rondines**, pulsa **Asignar rondín**, selecciona ruta, prefecto y fecha/hora local.
+4. Cierra sesión y entra con el prefecto. Selecciona el rondín y pulsa **Iniciar seleccionado**.
+5. Selecciona cada punto para completarlo u omitirlo con justificación.
+6. Con el rondín en curso seleccionado, abre **Incidencias** para reportar. Si seleccionaste un punto, se vincula a ese punto; de lo contrario, al rondín general.
+7. Selecciona la incidencia y pulsa **Adjuntar evidencia**: JPG, PNG o PDF; máximo 5 MB y cinco archivos.
+8. Regresa al rondín y ciérralo cuando todos sus puntos estén registrados.
+9. Entra como administrador, revisa las incidencias y cambia su estado: Abierta → EnRevision → Resuelta → Cerrada. También se permite Abierta → Resuelta.
+
+**Ver evidencias** permite exportar una copia del archivo seleccionado. La aplicación no abre navegador ni visor externo.
+
+## Datos y almacenamiento
+
+SQLite usa el componente nativo de Windows `winsqlite3.dll`. No necesita MySQL ni SQL Server.
+
+La base se crea en `%LOCALAPPDATA%\Ftracker\ftracker-desktop.db`; las evidencias, en la subcarpeta `evidencias`. Los datos permanecen al cerrar y volver a abrir. Para respaldar, cierra todas las instancias y copia la carpeta completa. El archivo local no está cifrado: depende de los permisos de la cuenta Windows.
+
+La versión de escritorio usa una base nueva; no importa automáticamente usuarios ni datos de la versión web. No se han eliminado bases antiguas.
+
+## Desarrollo
+
+Requiere Windows 10/11 y SDK .NET 10 (Visual Studio con herramientas de escritorio .NET o terminal). La restauración inicial descarga paquetes; después la aplicación funciona sin red.
+
+```powershell
+dotnet restore Ftracker.sln --configfile NuGet.config
+dotnet build Ftracker.sln
+dotnet run --project src/Ftracker.Desktop
+```
+
+## Compartir con el equipo por Git
+
+Sí: cualquier compañero con acceso al repositorio puede clonar el proyecto, modificarlo, compilarlo y ejecutarlo en Windows. Para subir sus cambios también necesita permiso de escritura en el repositorio o trabajar mediante un fork y una solicitud de incorporación.
+
+Cada integrante necesita Windows 10/11, Git y el **SDK de .NET 10** (el runtime por sí solo no permite compilar). Visual Studio es opcional; si lo usan, deben tener las herramientas de escritorio .NET y compatibilidad con .NET 10. `global.json` mantiene la solución en la familia del SDK 10.
+
+Después de clonar y abrir la carpeta, puede hacer doble clic en **Preparar-Ftracker.cmd**: restaura paquetes, compila y abre la versión Debug recién construida. La primera restauración necesita internet. También puede usar los tres comandos de Desarrollo. Después de modificar código, usar `dotnet run` o Preparar para ejecutar los cambios; Iniciar puede abrir una publicación anterior si aún no se ha vuelto a publicar.
+
+Subir a Git: `src` (incluidos los recursos del logo), `tests`, `scripts`, `Ftracker.sln`, `NuGet.config`, `global.json`, scripts CMD, `.gitignore`, `.gitattributes`, `.editorconfig` y documentación. `.gitignore` excluye binarios de compilación, paquetes descargados, bases y logs. No subir bases locales, evidencias reales, contraseñas ni configuración privada. Si alguno ya fue agregado a Git, ignorarlo no lo retira automáticamente del historial.
+
+**Git comparte código, no datos de operación.** Cada integrante crea su administrador y tiene su propia base local. Los usuarios, rutas y rondines de una computadora no aparecen automáticamente en las otras. Para entregar la aplicación a alguien que solo la usará, compartir un ZIP de toda la carpeta publicada, por fuera del código fuente o como archivo de una entrega.
+
+Para coordinar cambios, trabajar en una rama por tarea y revisar los cambios antes de incorporarlos a la rama principal. Esta entrega se prepara en `ftracker-beta-v2`.
+
+## Comodidad de uso
+
+La navegación lateral agrupa rondines, incidencias y catálogos; las tarjetas muestran los totales. Las tablas tienen búsqueda por texto (sin distinguir mayúsculas ni acentos), selección de fila completa y mensajes cuando están vacías. Las acciones se habilitan según la selección y el estado del registro. La fecha de asignación se elige con calendario y la hora se escribe en formato de 24 horas.
+
+Los formularios muestran los errores sin cerrarse ni borrar lo escrito. Las desactivaciones y el cierre de sesión requieren confirmación. La configuración inicial solicita confirmar la contraseña. Tab permite moverse entre controles y Escape cancelar un formulario.
+
+Para una distribución que incluya .NET y no requiera instalarlo en otro equipo Windows x64:
+
+```powershell
+dotnet publish src/Ftracker.Desktop -c Release -r win-x64 --self-contained true -o artifacts/Ftracker
+```
+
+Copia **toda** la carpeta `artifacts/Ftracker`, no solo el archivo EXE.
+
+Pruebas de integración local:
+
+```powershell
+dotnet run --project tests/Ftracker.SmokeTests
+```
+
+Comprobaciones de interfaz WPF (usa datos temporales y no modifica las cuentas reales):
+
+```powershell
+dotnet run --project tests/Ftracker.DesktopChecks
+```
+
+## Arquitectura
+
+- `Ftracker.Desktop`: WPF; ViewModel de datos y ventanas nativas de acceso/operación. Los eventos de UI coordinan los servicios.
+- `Ftracker.Application`: contratos de casos de uso, roles y sesión.
+- `Ftracker.Domain`: entidades y estados.
+- `Ftracker.Infrastructure`: EF Core SQLite, autenticación PBKDF2, catálogos, auditoría, evidencias y servicios de rondines/incidencias.
+
+Se retiró el código fuente del proyecto ASP.NET Core y se sustituyó por Desktop en la solución. Los PDF/HTML anteriores quedan sustituidos por la especificación de escritorio actualizada. Las carpetas de compilación web antiguas pueden permanecer como artefactos ignorados.
+
+## Alcance y pendientes
+
+Incluye alta y activación/desactivación de usuarios/rutas, puntos iniciales, asignación, ejecución, cierre, incidencias, evidencias, resumen y bitácora. Aún faltan edición de perfiles y puntos existentes, cambio/recuperación de contraseña, cancelación/reasignación, filtros avanzados y un instalador. La creación automática del esquema sirve para esta beta; los cambios futuros de estructura requerirán migraciones.

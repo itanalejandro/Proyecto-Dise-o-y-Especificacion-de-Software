@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+.dotnet-cli/
+.nuget-packages/
+artifacts/
+*.db
+*.db-shm
+*.db-wal
+*.log
+.vs/

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>Ftracker</AssemblyName>
+    <ApplicationIcon>Assets\ftracker.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\Ftracker.Infrastructure\Ftracker.Infrastructure.csproj" /></ItemGroup>
+  <ItemGroup><Resource Include="Assets\ftracker-logo.png" /><Resource Include="Assets\ftracker.ico" /></ItemGroup>
+</Project>

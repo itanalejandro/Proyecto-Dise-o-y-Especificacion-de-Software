@@ -1,0 +1,8 @@
+Use case: logo-brand
+Asset type: production logo symbol for Ftracker, a Windows desktop application for patrol rounds, routes, checkpoints and incident tracking.
+Primary request: Create one original, polished, minimal brand symbol: a bold geometric capital F subtly built from a connected route with round checkpoint endpoints. Strong simple silhouette that reads at small app-icon sizes. Not a generic clip-art map pin. Professional and approachable.
+Style/medium: crisp flat vector-like logo delivered as PNG, no textures.
+Composition: single square centered symbol filling about 85% of the canvas, balanced negative space; no wordmark, only the F symbol.
+Color palette: navy #12365A and blue #4682B4, matching the existing Ftracker UI.
+Background: genuinely transparent alpha.
+Constraints: exactly one logo, no presentation board, no mockup, no slogan, no 'Windows' or local-system descriptions, no watermark, no gradients, no shadows, no 3D, no surrounding frame.
