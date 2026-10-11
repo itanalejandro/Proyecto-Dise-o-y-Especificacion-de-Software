@@ -20,6 +20,12 @@ En el primer inicio crea tu cuenta administradora: nombre, correo y contraseña 
 8. Regresa al rondín y ciérralo cuando todos sus puntos estén registrados.
 9. Entra como administrador, revisa las incidencias y cambia su estado: Abierta → EnRevision → Resuelta → Cerrada. También se permite Abierta → Resuelta.
 
+### Reasignar o cancelar recorridos
+
+En **Rondines**, el administrador puede **Reasignar** un recorrido programado a otro prefecto activo, indicando un motivo. No se permite reasignar recorridos iniciados, cerrados o cancelados. La asignación anterior y el motivo quedan en la bitácora.
+
+**Cancelar rondín** permite detener uno programado o en curso. Exige un motivo, informa que la acción no se puede deshacer y conserva los puntos, incidencias y evidencias ya guardados. El prefecto deja de poder iniciar, registrar puntos, reportar incidencias o adjuntar evidencias a ese recorrido. El administrador puede seguir atendiendo sus incidencias. El motivo y el estado anterior se registran en la bitácora; no se sobrescriben las observaciones iniciales del rondín.
+
 **Ver evidencias** permite exportar una copia del archivo seleccionado. La aplicación no abre navegador ni visor externo.
 
 ## Datos y almacenamiento
@@ -61,7 +67,7 @@ Para coordinar cambios, trabajar en una rama por tarea y revisar los cambios ant
 1. Como administrador, selecciona una ruta en **Rutas y puntos** y pulsa **Ubicar en croquis**.
 2. Selecciona un punto en la lista y haz clic en el mapa para colocarlo o moverlo. Repite con los demás y pulsa **Guardar ubicaciones**. **Quitar ubicación** deja un punto únicamente en la lista.
 3. Como prefecto, selecciona un rondín en **Mis rondines** y pulsa **Ver croquis**. Los programados permiten consultar la ruta; para registrar resultados, primero inicia el rondín desde la pantalla principal.
-4. En un rondín en curso, selecciona un marcador o un punto de la lista y pulsa **Completar punto** u **Omitir punto**. Omitir requiere una observación. Azul significa pendiente, verde completado y ámbar omitido. Los rondines cerrados y la vista de administrador son de consulta.
+4. En un rondín en curso, selecciona un marcador o un punto de la lista y pulsa **Completar punto** u **Omitir punto**. Omitir requiere una observación. También puedes pulsar **Reportar incidencia** para vincular una falla al punto seleccionado, aunque ya se haya completado. Las fotografías o PDF se adjuntan después desde **Incidencias → Adjuntar evidencia**. Azul significa pendiente, verde completado y ámbar omitido. Los rondines cerrados/cancelados y la vista de administrador son de consulta.
 
 El zoom, las barras de desplazamiento y **Ajustar** permiten explorar el área. Los puntos sin ubicación siguen disponibles en la lista. Las ubicaciones se copian al iniciar un rondín: editar la ruta no altera los recorridos ya iniciados. Los rondines antiguos no tienen posiciones históricas y se muestran sin marcadores. No hay GPS y las líneas solo indican orden, no caminos reales.
 
@@ -104,4 +110,4 @@ Se retiró el código fuente del proyecto ASP.NET Core y se sustituyó por Deskt
 
 ## Alcance y pendientes
 
-Incluye alta y activación/desactivación de usuarios/rutas, puntos iniciales, croquis interactivo, asignación, ejecución, cierre, incidencias, evidencias, resumen y bitácora. Aún faltan edición de perfiles y nombres/orden de puntos existentes, cambio/recuperación de contraseña, cancelación/reasignación, filtros avanzados y un instalador. La creación automática del esquema y la actualización aditiva del croquis sirven para esta beta; otros cambios futuros de estructura requerirán migraciones.
+Incluye alta y activación/desactivación de usuarios/rutas, puntos iniciales, croquis interactivo, asignación, reasignación, cancelación, ejecución, cierre, incidencias desde tabla y croquis, evidencias y bitácora. Aún faltan edición de perfiles y nombres/orden de puntos existentes, cambio/recuperación de contraseña, filtros avanzados y un instalador. La creación automática del esquema y la actualización aditiva del croquis sirven para esta beta; otros cambios futuros de estructura requerirán migraciones.

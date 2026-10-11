@@ -20,7 +20,7 @@ internal static class Program
         var result = 1;
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/Ftracker;component/Theme.xaml", UriKind.Relative) });
-        var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
         timeout.Tick += (_, _) => { result = 1; timeout.Stop(); Console.WriteLine("Error: tiempo de comprobación WPF agotado."); app.Shutdown(1); Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background); };
         timeout.Start();
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
@@ -43,6 +43,8 @@ internal static class Program
         var tabs = Descendants<TabControl>(window).Single();
         Check(tabs.Items.Count == 5, "Navegación de administrador");
         Check(!Descendants<System.Windows.Controls.Primitives.UniformGrid>(window).Any(), "Encabezado sin tarjetas de resumen");
+        Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Reasignar").IsEnabled, "No reasigna sin seleccionar rondín");
+        Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Cancelar rondín").IsEnabled, "No cancela sin seleccionar rondín");
         var userTab = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Usuarios"); tabs.SelectedItem = userTab; window.UpdateLayout();
         var toggle = Descendants<Button>(window).Single(x => (string?)x.Content == "Activar / desactivar");
         Check(!toggle.IsEnabled, "Acción deshabilitada sin selección");
@@ -121,8 +123,60 @@ internal static class Program
         await Until(() => Descendants<TextBlock>(running).Any(x => x.Text == "Punto registrado."));
         Check(!mark.IsEnabled, "No registra dos veces el mismo punto desde croquis");
         Check((await store.GetRoundCroquisAsync(roundId)).Puntos[0].Resultado == RegistroResultado.Completado, "Registro desde croquis persistido");
+        var report = Descendants<Button>(running).Single(x => (string?)x.Content == "Reportar incidencia");
+        Check(report.IsEnabled, "Puede reportar falla de punto completado mientras rondín sigue en curso");
+        _ = Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() =>
+        {
+            var dialog = System.Windows.Application.Current.Windows.OfType<Editor>().Single(); dialog.UpdateLayout();
+            var fields = Descendants<TextBox>(dialog).ToList(); fields[0].Text = "Mantenimiento"; fields[1].Text = "Lámpara fundida desde croquis";
+            Descendants<Button>(dialog).Single(x => (string?)x.Content == "Guardar").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }));
+        report.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Until(() => Descendants<TextBlock>(running).Any(x => x.Text.StartsWith("Incidencia guardada.")));
+        await using (var db = store.Open())
+        {
+            var point = await db.RegistrosPunto.Where(x => x.RondinId == roundId).OrderBy(x => x.Orden).FirstAsync();
+            Check(await db.Incidencias.AnyAsync(x => x.RondinId == roundId && x.PuntoControlId == point.PuntoControlId && x.Descripcion == "Lámpara fundida desde croquis"), "Incidencia del croquis vinculada al punto correcto");
+        }
         SaveImage(running, Path.Combine(previewDir, "interfaz-croquis-prefecto.png")); running.Close();
-        prefect.Close(); Console.WriteLine("COMPROBACIONES WPF COMPLETADAS");
+        prefect.Close(); store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+        await store.AddUserAsync("Segundo prefecto", "segundo@example.com", "SegundoPrefecto123!", Roles.Prefecto);
+        Guid scheduledId;
+        await using (var db = store.Open())
+        {
+            var originalPrefect = await db.Users.SingleAsync(x => x.Email == "prefecto@example.com");
+            scheduledId = (await new RondinService(db, store.Session).CrearAsync(new(routeId, originalPrefect.Id, DateTime.UtcNow, null), store.Session.UserId!)).Id;
+        }
+        var management = new MainWindow(store) { ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500 };
+        management.Show(); await Until(() => ((MainViewModel)management.DataContext).Rounds.Count == 2); management.UpdateLayout();
+        var managementVm = (MainViewModel)management.DataContext;
+        var managementTable = Descendants<DataGrid>(management).Single(); managementTable.SelectedItem = managementVm.Rounds.Single(x => x.Id == roundId);
+        var cancel = Descendants<Button>(management).Single(x => (string?)x.Content == "Cancelar rondín");
+        var reassign = Descendants<Button>(management).Single(x => (string?)x.Content == "Reasignar");
+        Check(cancel.IsEnabled && !reassign.IsEnabled, "Rondín en curso permite cancelar pero no reasignar");
+        _ = Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() =>
+        {
+            var dialog = System.Windows.Application.Current.Windows.OfType<Editor>().Single(); dialog.UpdateLayout();
+            Descendants<TextBox>(dialog).Single().Text = "Área cerrada por mantenimiento";
+            Descendants<Button>(dialog).Single(x => (string?)x.Content == "Confirmar cancelación").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }));
+        cancel.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Until(() => managementVm.Rounds.Any(x => x.Id == roundId && x.Estado == RondinEstado.Cancelado));
+        Check(!cancel.IsEnabled && !reassign.IsEnabled, "Rondín cancelado bloquea acciones administrativas repetidas");
+        managementTable.SelectedItem = managementVm.Rounds.Single(x => x.Id == scheduledId);
+        Check(reassign.IsEnabled, "Rondín programado habilita reasignación");
+        _ = Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() =>
+        {
+            var dialog = System.Windows.Application.Current.Windows.OfType<Editor>().Single(); dialog.UpdateLayout();
+            Descendants<TextBox>(dialog).Single().Text = "Cambio de turno";
+            Descendants<Button>(dialog).Single(x => (string?)x.Content == "Guardar").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }));
+        reassign.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Until(() => managementVm.Rounds.Any(x => x.Id == scheduledId && x.Prefecto == "Segundo prefecto"));
+        Check(managementVm.Rounds.Single(x => x.Id == scheduledId).Prefecto == "Segundo prefecto", "Reasignación desde interfaz actualiza prefecto");
+        await Task.Delay(100); management.UpdateLayout();
+        SaveImage(management, Path.Combine(previewDir, "interfaz-gestion-rondines.png")); management.Close();
+        Console.WriteLine("COMPROBACIONES WPF COMPLETADAS");
     }
     private static async Task Until(Func<bool> condition)
     {
@@ -141,8 +195,14 @@ internal static class Program
     {
         window.UpdateLayout(); var content = (FrameworkElement)window.Content;
         var bitmap = new RenderTargetBitmap((int)content.ActualWidth, (int)content.ActualHeight, 96, 96, PixelFormats.Pbgra32);
-        var background = new DrawingVisual(); using (var drawing = background.RenderOpen()) drawing.DrawRectangle(window.Background, null, new Rect(0, 0, content.ActualWidth, content.ActualHeight));
-        bitmap.Render(background); bitmap.Render(content);
+        var background = new DrawingVisual();
+        using (var drawing = background.RenderOpen())
+        {
+            var bounds = new Rect(0, 0, content.ActualWidth, content.ActualHeight);
+            drawing.DrawRectangle(window.Background, null, bounds);
+            drawing.DrawRectangle(new VisualBrush(content) { Stretch = Stretch.Fill }, null, bounds);
+        }
+        bitmap.Render(background);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var output = File.Create(path); encoder.Save(output);
     }
     private static void Check(bool value, string message) { if (!value) throw new Exception(message); Console.WriteLine("OK: " + message); }

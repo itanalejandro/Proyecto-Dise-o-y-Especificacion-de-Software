@@ -51,8 +51,14 @@ public sealed class MainWindow : Window
     private void BuildRounds()
     {
         var panel = NewTab(vm.IsAdmin ? "Rondines" : "Mis rondines", vm.IsAdmin ? "Asigna recorridos y consulta su avance." : "Selecciona un rondín para iniciarlo y revisar sus puntos.");
-        if (vm.IsAdmin) panel.Children.Add(ActionButton("Asignar rondín", Assign));
-        panel.Children.Add(ActionButton("Ver croquis", ShowRoundCroquis, () => rounds.SelectedItem is RoundRow));
+        var management = new WrapPanel(); panel.Children.Add(management);
+        if (vm.IsAdmin)
+        {
+            management.Children.Add(ActionButton("Asignar rondín", Assign));
+            management.Children.Add(ActionButton("Reasignar", ReassignRound, () => rounds.SelectedItem is RoundRow { Estado: RondinEstado.Programado }));
+            management.Children.Add(ActionButton("Cancelar rondín", CancelRound, () => rounds.SelectedItem is RoundRow { Estado: RondinEstado.Programado or RondinEstado.EnCurso }));
+        }
+        management.Children.Add(ActionButton("Ver croquis", ShowRoundCroquis, () => rounds.SelectedItem is RoundRow));
         AddSearch(panel, rounds, "Buscar por ruta, prefecto o estado");
         rounds.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Rounds))); rounds.Height = vm.IsAdmin ? 350 : 200; AddTable(panel, rounds, vm.IsAdmin ? "Todavía no hay rondines. Crea una ruta y un prefecto para asignar el primero." : "Aún no tienes rondines asignados. Consulta con tu administrador.");
         if (!vm.IsAdmin)
@@ -157,6 +163,32 @@ public sealed class MainWindow : Window
         })) await Refresh();
     }
     private async Task Start() { var r = Selected<RoundRow>(rounds); await using var db = store.Open(); await new RondinService(db, store.Session).IniciarAsync(r.Id, store.Session.UserId!); await Refresh(); await LoadPoints(); }
+    private async Task ReassignRound()
+    {
+        var round = Selected<RoundRow>(rounds);
+        await using var db = store.Open();
+        var current = await db.Rondines.AsNoTracking().SingleAsync(x => x.Id == round.Id);
+        var available = vm.Users.Where(x => x.Activo && x.Rol == Roles.Prefecto && x.Id != current.PrefectoId).ToList();
+        if (available.Count == 0) throw new ReglaNegocioException("Necesitas otro prefecto activo para reasignar este rondín.");
+        var dialog = new Editor(this, "Reasignar rondín"); dialog.Label($"Ruta: {round.Ruta}. Prefecto actual: {round.Prefecto}.");
+        var prefect = dialog.Choice("Nuevo prefecto", available, "Nombre"); var reason = dialog.Text("Motivo (obligatorio)", multiline: true); reason.MaxLength = 1000;
+        if (dialog.Save(async () =>
+        {
+            await using var context = store.Open();
+            await new RondinService(context, store.Session).ReasignarAsync(round.Id, new(((UserRow)prefect.SelectedItem).Id, reason.Text), store.Session.UserId!);
+        })) await Refresh();
+    }
+    private async Task CancelRound()
+    {
+        var round = Selected<RoundRow>(rounds); var dialog = new Editor(this, "Cancelar rondín");
+        dialog.Label($"Ruta: {round.Ruta}. Los registros e incidencias se conservarán, pero no se podrá continuar el recorrido. Esta acción no se puede deshacer.");
+        var reason = dialog.Text("Motivo (obligatorio)", multiline: true); reason.MaxLength = 1000;
+        if (dialog.Save(async () =>
+        {
+            await using var db = store.Open();
+            await new RondinService(db, store.Session).CancelarAsync(round.Id, reason.Text, store.Session.UserId!);
+        }, "Confirmar cancelación")) await Refresh();
+    }
     private async Task Mark(RegistroResultado result)
     {
         var r = Selected<RoundRow>(rounds); var p = Selected<PointRow>(points);
@@ -171,8 +203,7 @@ public sealed class MainWindow : Window
     private async Task Report()
     {
         var r = Selected<RoundRow>(rounds); var p = points.SelectedItem as PointRow;
-        var d = new Editor(this, "Reportar incidencia"); d.Label(p is null ? "Incidencia general del rondín: " + r.Ruta : "Punto: " + p.Nombre); var type = d.Text("Tipo (por ejemplo: mantenimiento)"); var priority = d.Choice("Prioridad", Enum.GetValues<IncidenciaPrioridad>()); var desc = d.Text("Describe lo que encontraste", multiline: true);
-        if (d.Save(async () => { await using var db = store.Open(); await new IncidenciaService(db, store.Session).CrearAsync(new(r.Id, p?.PuntoId, type.Text, (IncidenciaPrioridad)priority.SelectedItem, desc.Text), store.Session.UserId!); })) await Refresh();
+        if (IncidentEditor.Report(this, store, r.Id, p?.PuntoId, p is null ? "Incidencia general del rondín: " + r.Ruta : "Punto: " + p.Nombre)) await Refresh();
     }
     private async Task ChangeIncident()
     {

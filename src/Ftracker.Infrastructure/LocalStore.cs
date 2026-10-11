@@ -103,6 +103,7 @@ public sealed partial class LocalStore
         File.Copy(path, destination);
         try
         {
+            incident.Rondin.ActualizadoEn = DateTime.UtcNow;
             db.Evidencias.Add(new Evidencia { IncidenciaId = incidentId, NombreOriginal = file.Name, RutaArchivo = destination, TipoMime = ext == ".pdf" ? "application/pdf" : ext == ".png" ? "image/png" : "image/jpeg", CreadoPorId = Session.UserId });
             Audit(db, "AdjuntarEvidencia", incidentId.ToString()); await db.SaveChangesAsync();
         }

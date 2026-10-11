@@ -41,6 +41,7 @@ public sealed class RondinService(FtrackerDbContext db, ISession session) : IRon
         if (registro.Resultado != RegistroResultado.Pendiente) throw new ReglaNegocioException("El punto ya fue registrado.");
         if (!Enum.IsDefined(c.Resultado) || c.Resultado == RegistroResultado.Pendiente || (c.Resultado == RegistroResultado.Omitido && string.IsNullOrWhiteSpace(c.Observaciones))) throw new ReglaNegocioException("Resultado inválido. Un punto omitido requiere observación.");
         registro.Resultado = c.Resultado; registro.Observaciones = c.Observaciones; registro.MarcadoEn = DateTime.UtcNow; registro.ActualizadoEn = DateTime.UtcNow;
+        r.ActualizadoEn = DateTime.UtcNow; // Detect a concurrent cancellation before saving a result.
         await Auditar(actorId, "MarcarPunto", "RegistroPunto", registro.Id, c.Resultado.ToString(), ct); await db.SaveChangesAsync(ct); return registro;
     }
     public async Task<Rondin> CerrarAsync(Guid id, string? observaciones, string actorId, CancellationToken ct = default)
@@ -50,6 +51,40 @@ public sealed class RondinService(FtrackerDbContext db, ISession session) : IRon
         if (r.Registros.Any(x => x.Resultado == RegistroResultado.Pendiente)) throw new ReglaNegocioException("Todos los puntos deben registrarse antes de cerrar.");
         r.Estado = RondinEstado.Cerrado; r.CerradoEn = DateTime.UtcNow; r.Observaciones = observaciones ?? r.Observaciones; r.ActualizadoEn = DateTime.UtcNow;
         await Auditar(actorId, "Cerrar", "Rondin", r.Id, null, ct); await db.SaveChangesAsync(ct); return r;
+    }
+    public async Task<Rondin> CancelarAsync(Guid id, string motivo, string actorId, CancellationToken ct = default)
+    {
+        ValidarAdministrador(actorId); ValidarMotivo(motivo);
+        var round = await db.Rondines.SingleOrDefaultAsync(x => x.Id == id, ct)
+            ?? throw new ReglaNegocioException("El rondín no existe.");
+        if (round.Estado is not (RondinEstado.Programado or RondinEstado.EnCurso))
+            throw new ReglaNegocioException("Solo puede cancelarse un rondín programado o en curso.");
+        var previous = round.Estado;
+        round.Estado = RondinEstado.Cancelado; round.ActualizadoEn = DateTime.UtcNow;
+        await Auditar(actorId, "Cancelar", "Rondin", id, $"Estado anterior: {previous}. Motivo: {motivo.Trim()}", ct);
+        await db.SaveChangesAsync(ct); return round;
+    }
+    public async Task<Rondin> ReasignarAsync(Guid id, ReasignarRondinCommand command, string actorId, CancellationToken ct = default)
+    {
+        ValidarAdministrador(actorId); ValidarMotivo(command.Motivo);
+        var round = await db.Rondines.SingleOrDefaultAsync(x => x.Id == id, ct)
+            ?? throw new ReglaNegocioException("El rondín no existe.");
+        if (round.Estado != RondinEstado.Programado) throw new ReglaNegocioException("Solo puede reasignarse un rondín que aún no ha iniciado.");
+        if (round.PrefectoId == command.PrefectoId) throw new ReglaNegocioException("Selecciona un prefecto distinto al actual.");
+        if (!await db.Users.AnyAsync(x => x.Id == command.PrefectoId && x.Activo && x.Rol == Roles.Prefecto, ct))
+            throw new ReglaNegocioException("Selecciona un prefecto activo.");
+        var previous = round.PrefectoId;
+        round.PrefectoId = command.PrefectoId; round.ActualizadoEn = DateTime.UtcNow;
+        await Auditar(actorId, "Reasignar", "Rondin", id, $"Prefecto anterior: {previous}. Nuevo prefecto: {command.PrefectoId}. Motivo: {command.Motivo.Trim()}", ct);
+        await db.SaveChangesAsync(ct); return round;
+    }
+    private void ValidarAdministrador(string actorId)
+    {
+        if (session.UserId != actorId || session.Role != Roles.Administrador) throw new ReglaNegocioException("Se requiere administrador.");
+    }
+    private static void ValidarMotivo(string motivo)
+    {
+        if (string.IsNullOrWhiteSpace(motivo) || motivo.Trim().Length > 1000) throw new ReglaNegocioException("Escribe un motivo de 1 a 1000 caracteres.");
     }
     public async Task<IReadOnlyList<Rondin>> MisRondinesAsync(string prefectoId, CancellationToken ct = default)
     {
@@ -66,12 +101,14 @@ public sealed class IncidenciaService(FtrackerDbContext db, ISession session) : 
     {
         if (session.UserId != actor || session.Role != Roles.Prefecto) throw new ReglaNegocioException("Se requiere prefecto.");
         if (string.IsNullOrWhiteSpace(c.Tipo) || string.IsNullOrWhiteSpace(c.Descripcion)) throw new ReglaNegocioException("Tipo y descripción son obligatorios.");
+        if (c.Tipo.Trim().Length > 80 || c.Descripcion.Trim().Length > 4000) throw new ReglaNegocioException("El tipo admite hasta 80 caracteres y la descripción hasta 4000.");
         var r = await db.Rondines.SingleOrDefaultAsync(x => x.Id == c.RondinId, ct) ?? throw new ReglaNegocioException("El rondín no existe.");
         if (r.PrefectoId != actor) throw new ReglaNegocioException("No tienes permiso para registrar una incidencia en este rondín.");
         if (r.Estado != RondinEstado.EnCurso) throw new ReglaNegocioException("El rondín debe estar en curso.");
         if (!Enum.IsDefined(c.Prioridad)) throw new ReglaNegocioException("Prioridad inválida.");
         if (c.PuntoControlId.HasValue && !await db.RegistrosPunto.AnyAsync(x => x.RondinId == r.Id && x.PuntoControlId == c.PuntoControlId, ct)) throw new ReglaNegocioException("El punto no pertenece al rondín.");
         var i = new Incidencia { RondinId = c.RondinId, PuntoControlId = c.PuntoControlId, Tipo = c.Tipo.Trim(), Prioridad = c.Prioridad, Descripcion = c.Descripcion.Trim(), CreadoPorId = actor };
+        r.ActualizadoEn = DateTime.UtcNow; // Serialize against cancellation using the round's concurrency token.
         db.Incidencias.Add(i); db.Auditorias.Add(new Auditoria { ActorId = actor, Accion = "Crear", Entidad = "Incidencia", EntidadId = i.Id.ToString() }); await db.SaveChangesAsync(ct); return i;
     }
     public async Task<Incidencia> CambiarEstadoAsync(Guid id, CambiarIncidenciaCommand c, string actor, CancellationToken ct = default)

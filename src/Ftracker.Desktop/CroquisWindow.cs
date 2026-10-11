@@ -32,6 +32,7 @@ internal sealed class CroquisWindow : Window
     private readonly Button clear = new() { Content = "Quitar ubicación" };
     private readonly Button complete = new() { Content = "Completar punto" };
     private readonly Button omit = new() { Content = "Omitir punto" };
+    private readonly Button report = new() { Content = "Reportar incidencia" };
     private CroquisPunto? Selected => (list.SelectedItem as PointItem)?.Point;
     private sealed record PointItem(CroquisPunto Point, string Label);
 
@@ -70,7 +71,7 @@ internal sealed class CroquisWindow : Window
         var actions = new StackPanel(); DockPanel.SetDock(actions, Dock.Bottom); sidebar.Children.Add(actions);
         actions.Children.Add(new ScrollViewer { Content = detail, MaxHeight = 150, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         if (editing) { actions.Children.Add(clear); actions.Children.Add(save); }
-        else if (canRegister) { actions.Children.Add(complete); actions.Children.Add(omit); }
+        else if (canRegister) { actions.Children.Add(complete); actions.Children.Add(omit); actions.Children.Add(report); }
         actions.Children.Add(Tool("Cerrar", Close)); sidebar.Children.Add(list);
         var itemText = new FrameworkElementFactory(typeof(TextBlock));
         itemText.SetBinding(TextBlock.TextProperty, new Binding("Label"));
@@ -101,6 +102,7 @@ internal sealed class CroquisWindow : Window
         });
         complete.Click += async (_, _) => await Run(() => Mark(RegistroResultado.Completado));
         omit.Click += async (_, _) => await Run(() => Mark(RegistroResultado.Omitido));
+        report.Click += async (_, _) => await Run(ReportIncident);
         Loaded += (_, _) => { Fit(); list.Focus(); };
         Closing += (_, e) =>
         {
@@ -183,6 +185,7 @@ internal sealed class CroquisWindow : Window
         save.IsEnabled = !busy && dirty;
         clear.IsEnabled = !busy && p?.X.HasValue == true;
         complete.IsEnabled = omit.IsEnabled = !busy && canRegister && p?.Resultado == RegistroResultado.Pendiente;
+        report.IsEnabled = !busy && canRegister && p is not null;
         list.IsEnabled = !busy;
     }
 
@@ -200,6 +203,16 @@ internal sealed class CroquisWindow : Window
         var round = await store.GetRoundCroquisAsync(targetId);
         points = round.Puntos.ToList(); canRegister = round.PuedeRegistrar; Rebind(point.Id);
         status.Text = "Punto registrado.";
+    }
+
+    private async Task ReportIncident()
+    {
+        if (!canRegister || Selected is not { } point) return;
+        await using var db = store.Open();
+        var record = await db.RegistrosPunto.AsNoTracking().SingleOrDefaultAsync(x => x.RondinId == targetId && x.Id == point.Id)
+            ?? throw new ReglaNegocioException("El punto no pertenece a este rondín.");
+        if (IncidentEditor.Report(this, store, targetId, record.PuntoControlId, "Punto: " + point.Nombre))
+            status.Text = "Incidencia guardada. Puedes adjuntar evidencia desde el apartado Incidencias.";
     }
 
     private async Task Run(Func<Task> action)

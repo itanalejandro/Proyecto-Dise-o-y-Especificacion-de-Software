@@ -80,8 +80,105 @@ await using (var second = store.Open())
 }
 store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
 await using (var db = store.Open()) { var svc = new IncidenciaService(db, store.Session); await svc.CambiarEstadoAsync(incidentId, new(IncidenciaEstado.EnRevision, "Revisando"), store.Session.UserId!); await svc.CambiarEstadoAsync(incidentId, new(IncidenciaEstado.Resuelta, "Reparado"), store.Session.UserId!); }
+await CheckRoundManagement(store, routeId, roundId, evidencePath);
 await using (var db = store.Open()) { Check(await db.Rondines.AnyAsync(x => x.Id == roundId && x.Estado == RondinEstado.Cerrado), "Rondín cerrado persistido"); Check(await db.Auditorias.CountAsync() >= 8, "Auditoría persistida"); var prefect = await db.Users.SingleAsync(x => x.Email == "prefecto@example.com"); await store.ToggleUserAsync(prefect.Id); }
 await Reject(() => store.LoginAsync("prefecto@example.com", "PrefectoLocal123!"), "Usuario desactivado bloqueado");
 Console.WriteLine("PRUEBAS COMPLETADAS. Base aislada: " + directory);
 static void Check(bool value, string title) { if (!value) throw new Exception(title); Console.WriteLine("OK: " + title); }
 static async Task Reject(Func<Task> action, string title) { try { await action(); } catch (ReglaNegocioException) { Console.WriteLine("OK: " + title); return; } throw new Exception("No bloqueó: " + title); }
+
+static async Task CheckRoundManagement(LocalStore store, Guid routeId, Guid closedId, string evidencePath)
+{
+    string firstId; string secondId; Guid id;
+    await using (var db = store.Open())
+    {
+        firstId = (await db.Users.SingleAsync(x => x.Email == "prefecto@example.com")).Id;
+        secondId = (await db.Users.SingleAsync(x => x.Email == "otro@example.com")).Id;
+        var service = new RondinService(db, store.Session);
+        id = (await service.CrearAsync(new(routeId, firstId, DateTime.UtcNow, "Mantener observación inicial"), store.Session.UserId!)).Id;
+    }
+    async Task Cancel(Guid target, string reason)
+    {
+        await using var db = store.Open(); await new RondinService(db, store.Session).CancelarAsync(target, reason, store.Session.UserId!);
+    }
+    async Task Reassign(string prefect, string reason)
+    {
+        await using var db = store.Open(); await new RondinService(db, store.Session).ReasignarAsync(id, new(prefect, reason), store.Session.UserId!);
+    }
+    await Reject(() => Cancel(id, " "), "Cancelar exige motivo");
+    await Reject(() => Cancel(closedId, "No debe cambiar"), "No cancela rondín cerrado");
+    await Reject(() => Reassign(secondId, ""), "Reasignar exige motivo");
+    await Reject(() => Reassign(firstId, "Sin cambio"), "Reasignar exige prefecto distinto");
+    await Reject(() => Reassign(store.Session.UserId!, "Rol inválido"), "No reasigna a administrador");
+    await store.ToggleUserAsync(secondId);
+    await Reject(() => Reassign(secondId, "Ausente"), "No reasigna a prefecto desactivado");
+    await store.ToggleUserAsync(secondId);
+    await Reassign(secondId, "Cambio de turno");
+    await using (var db = store.Open())
+    {
+        var r = await db.Rondines.SingleAsync(x => x.Id == id);
+        Check(r.PrefectoId == secondId && r.Observaciones == "Mantener observación inicial", "Reasignación conserva ruta y observaciones");
+        Check(await db.Auditorias.AnyAsync(x => x.EntidadId == id.ToString() && x.Accion == "Reasignar" && x.Detalle!.Contains("Cambio de turno")), "Reasignación audita motivo");
+    }
+    store.Session.SignOut(); await store.LoginAsync("prefecto@example.com", "PrefectoLocal123!");
+    await Reject(async () => { await using var db = store.Open(); await new RondinService(db, store.Session).IniciarAsync(id, store.Session.UserId!); }, "Prefecto anterior ya no inicia rondín");
+    await Reject(() => Cancel(id, "No autorizado"), "Prefecto no puede cancelar");
+    await Reject(() => Reassign(firstId, "No autorizado"), "Prefecto no puede reasignar");
+    store.Session.SignOut(); await store.LoginAsync("otro@example.com", "OtroPrefecto123!");
+    Guid recordId; Guid pointId;
+    await using (var db = store.Open())
+    {
+        var r = await new RondinService(db, store.Session).IniciarAsync(id, store.Session.UserId!);
+        recordId = r.Registros.First().Id; pointId = r.Registros.First().PuntoControlId;
+    }
+    await Reject(async () => { await using var db = store.Open(); await new IncidenciaService(db, store.Session).CrearAsync(new(id, Guid.NewGuid(), "Falla", IncidenciaPrioridad.Media, "Prueba"), store.Session.UserId!); }, "Incidencia rechaza punto ajeno");
+    await Reject(async () => { await using var db = store.Open(); await new IncidenciaService(db, store.Session).CrearAsync(new(id, pointId, "Falla", IncidenciaPrioridad.Media, new string('x', 4001)), store.Session.UserId!); }, "Incidencia limita descripción");
+    Guid incidentId;
+    await using (var db = store.Open())
+    {
+        incidentId = (await new IncidenciaService(db, store.Session).CrearAsync(new(id, pointId, "Mantenimiento", IncidenciaPrioridad.Alta, "Puerta dañada"), store.Session.UserId!)).Id;
+    }
+    await store.SaveEvidenceAsync(incidentId, evidencePath);
+    store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+    await Reject(() => Reassign(firstId, "Ya empezó"), "No reasigna rondín iniciado");
+    await Cancel(id, "Cierre del área por mantenimiento");
+    await Reject(() => Cancel(id, "Otra vez"), "No cancela dos veces");
+    await using (var db = store.Open())
+    {
+        var r = await db.Rondines.SingleAsync(x => x.Id == id);
+        Check(r.Estado == RondinEstado.Cancelado && await db.RegistrosPunto.CountAsync(x => x.RondinId == id) == 2 &&
+            await db.Incidencias.AnyAsync(x => x.Id == incidentId) && await db.Evidencias.AnyAsync(x => x.IncidenciaId == incidentId), "Cancelar conserva registros, incidencias y evidencias");
+        Check(await db.Auditorias.AnyAsync(x => x.EntidadId == id.ToString() && x.Accion == "Cancelar" && x.Detalle!.Contains("mantenimiento")), "Cancelación audita motivo");
+        await new IncidenciaService(db, store.Session).CambiarEstadoAsync(incidentId, new(IncidenciaEstado.Resuelta, "Área reparada"), store.Session.UserId!);
+    }
+    Check(!(await store.GetRoundCroquisAsync(id)).PuedeRegistrar, "Croquis cancelado es solo consulta");
+    store.Session.SignOut(); await store.LoginAsync("otro@example.com", "OtroPrefecto123!");
+    await Reject(async () => { await using var db = store.Open(); await new RondinService(db, store.Session).MarcarPuntoAsync(id, recordId, new(RegistroResultado.Completado, ""), store.Session.UserId!); }, "No marca puntos cancelados");
+    await Reject(async () => { await using var db = store.Open(); await new RondinService(db, store.Session).CerrarAsync(id, null, store.Session.UserId!); }, "No cierra rondín cancelado");
+    await Reject(async () => { await using var db = store.Open(); await new IncidenciaService(db, store.Session).CrearAsync(new(id, pointId, "Falla", IncidenciaPrioridad.Media, "Ya cancelado"), store.Session.UserId!); }, "No reporta sobre rondín cancelado");
+    await Reject(() => store.SaveEvidenceAsync(incidentId, evidencePath), "No adjunta evidencia a rondín cancelado");
+    store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+    Guid scheduledId;
+    await using (var db = store.Open()) { scheduledId = (await new RondinService(db, store.Session).CrearAsync(new(routeId, firstId, DateTime.UtcNow, null), store.Session.UserId!)).Id; }
+    await Cancel(scheduledId, "Actividad suspendida");
+    store.Session.SignOut(); await store.LoginAsync("prefecto@example.com", "PrefectoLocal123!");
+    await Reject(async () => { await using var db = store.Open(); await new RondinService(db, store.Session).IniciarAsync(scheduledId, store.Session.UserId!); }, "No inicia rondín programado cancelado");
+    store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+    Guid concurrentId; Guid concurrentRecord;
+    await using (var db = store.Open()) { concurrentId = (await new RondinService(db, store.Session).CrearAsync(new(routeId, firstId, DateTime.UtcNow, null), store.Session.UserId!)).Id; }
+    store.Session.SignOut(); await store.LoginAsync("prefecto@example.com", "PrefectoLocal123!");
+    await using (var db = store.Open()) { concurrentRecord = (await new RondinService(db, store.Session).IniciarAsync(concurrentId, store.Session.UserId!)).Registros.First().Id; }
+    await using (var stale = store.Open())
+    {
+        _ = await stale.Rondines.SingleAsync(x => x.Id == concurrentId);
+        await using (var db = store.Open()) { await new RondinService(db, store.Session).MarcarPuntoAsync(concurrentId, concurrentRecord, new(RegistroResultado.Completado, "Registro simultáneo"), store.Session.UserId!); }
+        store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+        try { await new RondinService(stale, store.Session).CancelarAsync(concurrentId, "Vista anterior", store.Session.UserId!); throw new Exception("No detectó cambio concurrente del rondín"); }
+        catch (DbUpdateConcurrencyException) { Console.WriteLine("OK: cancelación detecta registro concurrente"); }
+    }
+    await using (var db = store.Open())
+    {
+        Check(await db.Rondines.AnyAsync(x => x.Id == concurrentId && x.Estado == RondinEstado.EnCurso) &&
+            !await db.Auditorias.AnyAsync(x => x.EntidadId == concurrentId.ToString() && x.Accion == "Cancelar"), "Conflicto no guarda cancelación ni auditoría parcial");
+    }
+}
