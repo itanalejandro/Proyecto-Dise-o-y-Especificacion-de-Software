@@ -26,6 +26,18 @@ En **Rondines**, el administrador puede **Reasignar** un recorrido programado a 
 
 **Cancelar rondín** permite detener uno programado o en curso. Exige un motivo, informa que la acción no se puede deshacer y conserva los puntos, incidencias y evidencias ya guardados. El prefecto deja de poder iniciar, registrar puntos, reportar incidencias o adjuntar evidencias a ese recorrido. El administrador puede seguir atendiendo sus incidencias. El motivo y el estado anterior se registran en la bitácora; no se sobrescriben las observaciones iniciales del rondín.
 
+### Eliminar usuarios, rutas y rondines
+
+Solo el administrador ve estos botones. Todos piden confirmación y la acción **no se puede deshacer**; cada eliminación queda en la bitácora.
+
+- **Eliminar usuario** (pestaña Usuarios): no se puede eliminar la propia cuenta ni al último administrador activo. Si el usuario tiene rondines asignados se bloquea; elimina esos rondines primero o usa *Activar / desactivar* para conservar el historial.
+- **Eliminar ruta** (pestaña Rutas y puntos): borra la ruta, sus puntos y sus ubicaciones en el croquis. Se bloquea si algún rondín la usa.
+- **Eliminar rondín** (pestaña Rondines): borra el rondín con sus puntos registrados, incidencias y archivos de evidencia (también del disco). Para detener un rondín conservando todo, usa *Cancelar rondín*.
+
+### Hora al asignar un rondín
+
+La hora se elige con un selector de tres segmentos (hora · minutos · a. m./p. m.). Pulsa un segmento para abrir su lista, o usa la rueda del ratón o las flechas ↑ ↓ con el segmento seleccionado.
+
 ### Revisar evidencias dentro de Ftracker
 
 En **Incidencias**, selecciona un reporte con archivos adjuntos y pulsa **Ver evidencia**. La ventana permite elegir entre sus archivos y visualizar imágenes JPG/PNG con zoom, **Ajustar** y **100 %**. Las imágenes grandes usan una vista previa de hasta 2400 píxeles por lado mayor para limitar el consumo de memoria; 100 % se refiere al tamaño de esa vista previa. El original no se modifica ni se exporta automáticamente.
