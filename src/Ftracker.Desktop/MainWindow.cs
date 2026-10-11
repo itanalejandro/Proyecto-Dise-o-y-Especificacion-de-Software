@@ -75,6 +75,7 @@ public sealed class MainWindow : Window
         var bar = new WrapPanel();
         if (vm.IsAdmin) bar.Children.Add(ActionButton("Cambiar estado", ChangeIncident, () => incidents.SelectedItem is IncidentRow { Estado: not IncidenciaEstado.Cerrada }));
         else { bar.Children.Add(ActionButton("Reportar incidencia", Report, () => rounds.SelectedItem is RoundRow { Estado: RondinEstado.EnCurso })); bar.Children.Add(ActionButton("Adjuntar evidencia", Attach, () => incidents.SelectedItem is IncidentRow { Archivos: < 5 } i && vm.Rounds.Any(r => r.Id == i.RondinId && r.Estado == RondinEstado.EnCurso))); }
+        bar.Children.Add(ActionButton("Ver evidencia", PreviewEvidence, () => incidents.SelectedItem is IncidentRow { Archivos: > 0 }));
         bar.Children.Add(ActionButton("Exportar evidencia", ShowEvidence, () => incidents.SelectedItem is IncidentRow { Archivos: > 0 })); panel.Children.Add(bar);
         if (!vm.IsAdmin) { var context = new TextBlock { Margin = new Thickness(0, 8, 0, 8), TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray }; context.SetBinding(TextBlock.TextProperty, new Binding("SelectedItem.Ruta") { Source = rounds, StringFormat = "Rondín seleccionado: {0}", TargetNullValue = "Primero selecciona un recorrido en Mis rondines." }); panel.Children.Add(context); }
         AddSearch(panel, incidents, "Buscar por ruta, tipo, descripción o estado");
@@ -220,11 +221,17 @@ public sealed class MainWindow : Window
     }
     private async Task ShowEvidence()
     {
-        var i = Selected<IncidentRow>(incidents); await using var db = store.Open(); var files = await db.Evidencias.Where(x => x.IncidenciaId == i.Id).ToListAsync();
+        var i = Selected<IncidentRow>(incidents); var files = await store.GetEvidenceAsync(i.Id);
         if (files.Count == 0) throw new ReglaNegocioException("Esta incidencia no tiene archivos.");
         var d = new Editor(this, "Exportar evidencia"); var choice = d.Choice("Archivo", files, "NombreOriginal"); if (!d.Accept()) return;
         var selected = (Evidencia)choice.SelectedItem; var target = new SaveFileDialog { FileName = selected.NombreOriginal, Filter = "Archivo|*.*" };
-        if (target.ShowDialog(this) == true) { System.IO.File.Copy(selected.RutaArchivo, target.FileName, true); status.Text = "Evidencia exportada."; }
+        if (target.ShowDialog(this) == true) { var bytes = await store.ReadEvidenceAsync(selected.Id); await System.IO.File.WriteAllBytesAsync(target.FileName, bytes); status.Text = "Evidencia exportada."; }
+    }
+    private async Task PreviewEvidence()
+    {
+        var incident = Selected<IncidentRow>(incidents);
+        var window = await EvidenceWindow.CreateAsync(store, incident.Id);
+        window.Owner = this; window.ShowDialog();
     }
     private Task Logout()
     {

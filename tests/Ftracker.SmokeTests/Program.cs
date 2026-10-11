@@ -60,6 +60,24 @@ await using (var db = store.Open()) { var i = await new IncidenciaService(db, st
 var evidencePath = Path.Combine(directory, "prueba.pdf");
 await File.WriteAllTextAsync(evidencePath, "%PDF-1.4\n%%EOF");
 await store.SaveEvidenceAsync(incidentId, evidencePath);
+var attachments = await store.GetEvidenceAsync(incidentId);
+var originalEvidenceBytes = await File.ReadAllBytesAsync(evidencePath);
+var evidenceBytes = await store.ReadEvidenceAsync(attachments[0].Id);
+Check(attachments.Count == 1 && evidenceBytes.SequenceEqual(originalEvidenceBytes), "Lectura de evidencia conserva bytes originales");
+var originalLocation = attachments[0].RutaArchivo;
+await using (var db = store.Open()) { (await db.Evidencias.SingleAsync(x => x.Id == attachments[0].Id)).RutaArchivo = evidencePath; await db.SaveChangesAsync(); }
+await Reject(async () => { await store.ReadEvidenceAsync(attachments[0].Id); }, "No lee evidencia fuera de carpeta autorizada");
+await using (var db = store.Open()) { (await db.Evidencias.SingleAsync(x => x.Id == attachments[0].Id)).RutaArchivo = originalLocation; await db.SaveChangesAsync(); }
+File.Move(originalLocation, originalLocation + ".test-moved");
+await Reject(async () => { await store.ReadEvidenceAsync(attachments[0].Id); }, "Archivo ausente informa error controlado");
+File.Move(originalLocation + ".test-moved", originalLocation);
+store.Session.SignOut();
+await Reject(async () => { await store.GetEvidenceAsync(incidentId); }, "Sin sesión no consulta evidencias");
+await Reject(async () => { await store.ReadEvidenceAsync(attachments[0].Id); }, "Sin sesión no lee evidencias");
+await store.LoginAsync("otro@example.com", "OtroPrefecto123!");
+await Reject(async () => { await store.GetEvidenceAsync(incidentId); }, "Otro prefecto no lista evidencias ajenas");
+await Reject(async () => { await store.ReadEvidenceAsync(attachments[0].Id); }, "Otro prefecto no lee evidencias ajenas");
+store.Session.SignOut(); await store.LoginAsync("prefecto@example.com", "PrefectoLocal123!");
 await using (var db = store.Open()) { Check(await db.Evidencias.AnyAsync(x => x.IncidenciaId == incidentId), "Evidencia local persistida"); }
 var invalidPath = Path.Combine(directory, "invalido.png");
 await File.WriteAllTextAsync(invalidPath, "esto no es una imagen");
@@ -80,6 +98,7 @@ await using (var second = store.Open())
 }
 store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
 await using (var db = store.Open()) { var svc = new IncidenciaService(db, store.Session); await svc.CambiarEstadoAsync(incidentId, new(IncidenciaEstado.EnRevision, "Revisando"), store.Session.UserId!); await svc.CambiarEstadoAsync(incidentId, new(IncidenciaEstado.Resuelta, "Reparado"), store.Session.UserId!); }
+Check((await store.GetEvidenceAsync(incidentId)).Count == 1 && (await store.ReadEvidenceAsync(attachments[0].Id)).Length > 0, "Administrador consulta evidencia de rondín cerrado");
 await CheckRoundManagement(store, routeId, roundId, evidencePath);
 await using (var db = store.Open()) { Check(await db.Rondines.AnyAsync(x => x.Id == roundId && x.Estado == RondinEstado.Cerrado), "Rondín cerrado persistido"); Check(await db.Auditorias.CountAsync() >= 8, "Auditoría persistida"); var prefect = await db.Users.SingleAsync(x => x.Email == "prefecto@example.com"); await store.ToggleUserAsync(prefect.Id); }
 await Reject(() => store.LoginAsync("prefecto@example.com", "PrefectoLocal123!"), "Usuario desactivado bloqueado");

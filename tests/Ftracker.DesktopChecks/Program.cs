@@ -45,6 +45,8 @@ internal static class Program
         Check(!Descendants<System.Windows.Controls.Primitives.UniformGrid>(window).Any(), "Encabezado sin tarjetas de resumen");
         Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Reasignar").IsEnabled, "No reasigna sin seleccionar rondín");
         Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Cancelar rondín").IsEnabled, "No cancela sin seleccionar rondín");
+        tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Incidencias"); window.UpdateLayout();
+        Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Ver evidencia").IsEnabled, "No abre evidencias sin seleccionar un reporte con archivos");
         var userTab = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Usuarios"); tabs.SelectedItem = userTab; window.UpdateLayout();
         var toggle = Descendants<Button>(window).Single(x => (string?)x.Content == "Activar / desactivar");
         Check(!toggle.IsEnabled, "Acción deshabilitada sin selección");
@@ -138,6 +140,7 @@ internal static class Program
             var point = await db.RegistrosPunto.Where(x => x.RondinId == roundId).OrderBy(x => x.Orden).FirstAsync();
             Check(await db.Incidencias.AnyAsync(x => x.RondinId == roundId && x.PuntoControlId == point.PuntoControlId && x.Descripcion == "Lámpara fundida desde croquis"), "Incidencia del croquis vinculada al punto correcto");
         }
+        await CheckEvidenceViewer(store, roundId, previewDir);
         SaveImage(running, Path.Combine(previewDir, "interfaz-croquis-prefecto.png")); running.Close();
         prefect.Close(); store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
         await store.AddUserAsync("Segundo prefecto", "segundo@example.com", "SegundoPrefecto123!", Roles.Prefecto);
@@ -175,8 +178,68 @@ internal static class Program
         await Until(() => managementVm.Rounds.Any(x => x.Id == scheduledId && x.Prefecto == "Segundo prefecto"));
         Check(managementVm.Rounds.Single(x => x.Id == scheduledId).Prefecto == "Segundo prefecto", "Reasignación desde interfaz actualiza prefecto");
         await Task.Delay(100); management.UpdateLayout();
-        SaveImage(management, Path.Combine(previewDir, "interfaz-gestion-rondines.png")); management.Close();
+        SaveImage(management, Path.Combine(previewDir, "interfaz-gestion-rondines.png"));
+        var managementTabs = Descendants<TabControl>(management).Single();
+        managementTabs.SelectedItem = managementTabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Incidencias"); management.UpdateLayout();
+        Descendants<DataGrid>(management).Single().SelectedItem = managementVm.Incidents.Single();
+        Check(Descendants<Button>(management).Single(x => (string?)x.Content == "Ver evidencia").IsEnabled, "Administrador puede abrir evidencias de rondín cancelado");
+        management.Close();
         Console.WriteLine("COMPROBACIONES WPF COMPLETADAS");
+    }
+    private static async Task CheckEvidenceViewer(LocalStore store, Guid roundId, string previewDir)
+    {
+        Guid incidentId;
+        await using (var db = store.Open()) { incidentId = await db.Incidencias.Where(x => x.RondinId == roundId).Select(x => x.Id).SingleAsync(); }
+        try { await EvidenceWindow.CreateAsync(store, incidentId); throw new Exception("Abrió visor sin adjuntos"); }
+        catch (ReglaNegocioException) { Console.WriteLine("OK: Visor sin adjuntos informa validación"); }
+        var pngPath = Path.Combine(store.DataDirectory, "prueba.png");
+        var jpegPath = Path.Combine(store.DataDirectory, "prueba.jpg");
+        var source = new BitmapImage(new Uri("pack://application:,,,/Ftracker;component/Assets/ftracker-logo.png"));
+        var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(source));
+        using (var output = File.Create(pngPath)) png.Save(output);
+        var jpg = new JpegBitmapEncoder(); jpg.Frames.Add(BitmapFrame.Create(new FormatConvertedBitmap(source, PixelFormats.Bgr24, null, 0)));
+        using (var output = File.Create(jpegPath)) jpg.Save(output);
+        var pdfPath = Path.Combine(store.DataDirectory, "prueba.pdf"); await File.WriteAllTextAsync(pdfPath, "%PDF-1.4\n%%EOF");
+        var corruptPath = Path.Combine(store.DataDirectory, "corrupta.png");
+        await File.WriteAllBytesAsync(corruptPath, new byte[] {137,80,78,71,13,10,26,10,0,0,0,0});
+        var missingPath = Path.Combine(store.DataDirectory, "ausente.png"); File.Copy(pngPath, missingPath);
+        foreach (var path in new[] { pngPath, jpegPath, pdfPath, corruptPath, missingPath }) await store.SaveEvidenceAsync(incidentId, path);
+        var attachments = await store.GetEvidenceAsync(incidentId);
+        var missing = attachments.Single(x => x.NombreOriginal == "ausente.png");
+        // Move only a fixture created in this isolated test directory; no user evidence is touched.
+        File.Move(missing.RutaArchivo, missing.RutaArchivo + ".test-moved");
+        var originalBytes = await File.ReadAllBytesAsync(attachments.Single(x => x.NombreOriginal == "prueba.png").RutaArchivo);
+        var fileCount = Directory.GetFiles(Path.Combine(store.DataDirectory, "evidencias")).Length;
+        var viewer = await EvidenceWindow.CreateAsync(store, incidentId);
+        viewer.ShowInTaskbar = false; viewer.WindowStartupLocation = WindowStartupLocation.Manual; viewer.Left = -2500;
+        viewer.Show(); viewer.UpdateLayout();
+        var choice = Descendants<ComboBox>(viewer).Single();
+        var image = Descendants<Image>(viewer).Single(x => AutomationProperties.GetName(x) == "Vista previa de evidencia");
+        await Until(() => choice.IsEnabled && image.Source is not null);
+        Check(choice.Items.Count == 5 && image.Source is BitmapSource, "Visor muestra PNG y lista de adjuntos");
+        var zoom = Descendants<Slider>(viewer).Single(); zoom.Value = 1.5;
+        Check(image.LayoutTransform is ScaleTransform { ScaleX: 1.5 }, "Zoom interno cambia escala de imagen");
+        Descendants<Button>(viewer).Single(x => (string?)x.Content == "Ajustar").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        SaveImage(viewer, Path.Combine(previewDir, "interfaz-evidencias.png"));
+        using (var unlocked = new FileStream(attachments.Single(x => x.NombreOriginal == "prueba.png").RutaArchivo, FileMode.Open, FileAccess.Read, FileShare.None))
+            Check(unlocked.Length == originalBytes.Length, "Visor no mantiene bloqueado archivo original");
+        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "prueba.jpg");
+        await Until(() => choice.IsEnabled && image.Source is not null);
+        Check(image.Source is BitmapSource, "Visor muestra JPEG");
+        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "prueba.pdf");
+        await Until(() => choice.IsEnabled && Descendants<TextBlock>(viewer).Any(x => x.Text.StartsWith("La vista previa de PDF")));
+        Check(image.Source is null && !zoom.IsEnabled, "PDF informa exportación sin mostrar imagen anterior");
+        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "corrupta.png");
+        await Until(() => choice.IsEnabled && Descendants<TextBlock>(viewer).Any(x => x.Text.StartsWith("No se pudo mostrar la imagen")));
+        Check(image.Source is null, "Imagen dañada informa error sin cerrar visor");
+        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "ausente.png");
+        await Until(() => choice.IsEnabled && Descendants<TextBlock>(viewer).Any(x => x.Text.StartsWith("El archivo ya no está disponible")));
+        Check(viewer.IsVisible, "Archivo ausente no cierra visor");
+        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "prueba.png");
+        await Until(() => choice.IsEnabled && image.Source is not null);
+        Check((await File.ReadAllBytesAsync(attachments.Single(x => x.NombreOriginal == "prueba.png").RutaArchivo)).SequenceEqual(originalBytes) &&
+            Directory.GetFiles(Path.Combine(store.DataDirectory, "evidencias")).Length == fileCount, "Vista previa no altera archivos ni crea copias");
+        viewer.Close();
     }
     private static async Task Until(Func<bool> condition)
     {

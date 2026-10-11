@@ -26,7 +26,13 @@ En **Rondines**, el administrador puede **Reasignar** un recorrido programado a 
 
 **Cancelar rondín** permite detener uno programado o en curso. Exige un motivo, informa que la acción no se puede deshacer y conserva los puntos, incidencias y evidencias ya guardados. El prefecto deja de poder iniciar, registrar puntos, reportar incidencias o adjuntar evidencias a ese recorrido. El administrador puede seguir atendiendo sus incidencias. El motivo y el estado anterior se registran en la bitácora; no se sobrescriben las observaciones iniciales del rondín.
 
-**Ver evidencias** permite exportar una copia del archivo seleccionado. La aplicación no abre navegador ni visor externo.
+### Revisar evidencias dentro de Ftracker
+
+En **Incidencias**, selecciona un reporte con archivos adjuntos y pulsa **Ver evidencia**. La ventana permite elegir entre sus archivos y visualizar imágenes JPG/PNG con zoom, **Ajustar** y **100 %**. Las imágenes grandes usan una vista previa de hasta 2400 píxeles por lado mayor para limitar el consumo de memoria; 100 % se refiere al tamaño de esa vista previa. El original no se modifica ni se exporta automáticamente.
+
+Los PDF muestran un aviso y permiten **Exportar archivo**; no tienen vista previa interna. **Exportar evidencia** continúa disponible desde la pantalla principal para guardar una copia de cualquier adjunto. No se abre navegador ni visor externo.
+
+Solo el administrador y el prefecto del rondín pueden consultar sus evidencias, también después del cierre o cancelación. Si un archivo fue movido/eliminado o una imagen está dañada, el visor informa el problema sin cerrar la aplicación. Se muestran avisos para archivos vacíos, mayores de 5 MB o imágenes de dimensiones no compatibles; las vistas previas no mantienen bloqueado el original.
 
 ## Datos y almacenamiento
 
