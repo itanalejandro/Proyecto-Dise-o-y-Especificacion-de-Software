@@ -31,17 +31,15 @@ public sealed class MainWindow : Window
         Icon = Brand.Icon;
         Background = new SolidColorBrush(Color.FromRgb(245, 248, 251));
         var root = new DockPanel { Margin = new Thickness(24) }; Content = root;
-        var header = new StackPanel(); DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
-        header.Children.Add(Brand.Header(30));
-        header.Children.Add(new TextBlock { Text = $"{store.Session.User!.NombreCompleto} · {store.Session.Role}", Margin = new Thickness(0, 4, 0, 12) });
-        var cards = new System.Windows.Controls.Primitives.UniformGrid { Columns = 4, Margin = new Thickness(0, 0, 0, 16) };
-        foreach (var card in new[] { ("Programados", nameof(vm.Programados)), ("En curso", nameof(vm.EnCurso)), ("Cerrados", nameof(vm.Cerrados)), ("Incidencias abiertas", nameof(vm.Abiertas)) })
-        {
-            var content = new StackPanel(); var count = new TextBlock { FontSize = 26, FontWeight = FontWeights.SemiBold, Foreground = Brushes.SteelBlue }; count.SetBinding(TextBlock.TextProperty, new Binding(card.Item2)); content.Children.Add(count); content.Children.Add(new TextBlock { Text = card.Item1, Foreground = Brushes.SlateGray });
-            cards.Children.Add(new Border { Child = content, Background = Brushes.White, CornerRadius = new CornerRadius(10), Padding = new Thickness(18, 12, 18, 12), Margin = new Thickness(0, 0, 10, 0), BorderBrush = new SolidColorBrush(Color.FromRgb(223,231,239)), BorderThickness = new Thickness(1) });
-        }
-        header.Children.Add(cards);
-        var actions = new WrapPanel(); var update = ActionButton("Actualizar datos", Refresh); update.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(update); var logout = ActionButton("Cerrar sesión", Logout); logout.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(logout); header.Children.Add(actions);
+        var header = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 18) };
+        DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
+        var actions = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+        var update = ActionButton("Actualizar datos", Refresh); update.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(update);
+        var logout = ActionButton("Cerrar sesión", Logout); logout.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(logout);
+        DockPanel.SetDock(actions, Dock.Right); header.Children.Add(actions);
+        var identity = new StackPanel(); identity.Children.Add(Brand.Header(26));
+        identity.Children.Add(new TextBlock { Text = $"{store.Session.User!.NombreCompleto} · {store.Session.Role}", FontSize = 12, Foreground = Brushes.SlateGray, Margin = new Thickness(0, 4, 0, 0) });
+        header.Children.Add(identity);
         status.Foreground = Brushes.SlateGray; status.FontSize = 12;
         DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status); root.Children.Add(tabs);
         BuildRounds(); BuildIncidents();
@@ -54,6 +52,7 @@ public sealed class MainWindow : Window
     {
         var panel = NewTab(vm.IsAdmin ? "Rondines" : "Mis rondines", vm.IsAdmin ? "Asigna recorridos y consulta su avance." : "Selecciona un rondín para iniciarlo y revisar sus puntos.");
         if (vm.IsAdmin) panel.Children.Add(ActionButton("Asignar rondín", Assign));
+        panel.Children.Add(ActionButton("Ver croquis", ShowRoundCroquis, () => rounds.SelectedItem is RoundRow));
         AddSearch(panel, rounds, "Buscar por ruta, prefecto o estado");
         rounds.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Rounds))); rounds.Height = vm.IsAdmin ? 350 : 200; AddTable(panel, rounds, vm.IsAdmin ? "Todavía no hay rondines. Crea una ruta y un prefecto para asignar el primero." : "Aún no tienes rondines asignados. Consulta con tu administrador.");
         if (!vm.IsAdmin)
@@ -84,6 +83,7 @@ public sealed class MainWindow : Window
     private void BuildRoutes()
     {
         var panel = NewTab("Rutas y puntos", "Organiza los recorridos y el orden de sus puntos de revisión."); var bar = new WrapPanel(); bar.Children.Add(ActionButton("Nueva ruta", AddRoute)); bar.Children.Add(ActionButton("Activar / desactivar", ToggleRoute, () => routes.SelectedItem is RouteRow)); bar.Children.Add(ActionButton("Ver puntos", ShowRoute, () => routes.SelectedItem is RouteRow)); panel.Children.Add(bar);
+        bar.Children.Add(ActionButton("Ubicar en croquis", EditRouteCroquis, () => routes.SelectedItem is RouteRow));
         AddSearch(panel, routes, "Buscar ruta por nombre");
         routes.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Routes))); routes.Height = 350; AddTable(panel, routes, "Crea tu primera ruta con sus puntos de revisión.");
     }
@@ -131,6 +131,18 @@ public sealed class MainWindow : Window
     {
         var r = Selected<RouteRow>(routes); await using var db = store.Open(); var list = await db.PuntosControl.Where(x => x.RutaId == r.Id).OrderBy(x => x.Orden).ToListAsync();
         MessageBox.Show(this, string.Join("\n", list.Select(x => $"{x.Orden}. {x.Nombre}")), r.Nombre);
+    }
+    private async Task EditRouteCroquis()
+    {
+        var route = Selected<RouteRow>(routes);
+        var window = await CroquisWindow.ForRouteAsync(store, route.Id, route.Nombre);
+        window.Owner = this; window.ShowDialog(); await Refresh();
+    }
+    private async Task ShowRoundCroquis()
+    {
+        var round = Selected<RoundRow>(rounds);
+        var window = await CroquisWindow.ForRoundAsync(store, round.Id);
+        window.Owner = this; window.ShowDialog(); await Refresh();
     }
     private async Task Assign()
     {

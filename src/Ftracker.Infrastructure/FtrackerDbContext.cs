@@ -23,10 +23,13 @@ public sealed class FtrackerDbContext(DbContextOptions<FtrackerDbContext> option
     public DbSet<Incidencia> Incidencias => Set<Incidencia>();
     public DbSet<Evidencia> Evidencias => Set<Evidencia>();
     public DbSet<Auditoria> Auditorias => Set<Auditoria>();
+    public DbSet<UbicacionCroquis> UbicacionesCroquis => Set<UbicacionCroquis>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
         base.OnModelCreating(b);
+        b.Entity<UbicacionCroquis>().ToTable("UbicacionesCroquis", t =>
+            t.HasCheckConstraint("CK_UbicacionesCroquis_Rango", "X >= 0 AND X <= 1 AND Y >= 0 AND Y <= 1"));
         b.Entity<ApplicationUser>(e => { e.HasIndex(x => x.Email).IsUnique(); e.Property(x => x.Email).HasMaxLength(254); });
         b.Entity<Ruta>(e => { e.Property(x => x.Nombre).HasMaxLength(120).IsRequired(); });
         b.Entity<PuntoControl>(e => { e.Property(x => x.Nombre).HasMaxLength(120).IsRequired(); e.HasIndex(x => new { x.RutaId, x.Orden }).IsUnique(); e.HasOne(x => x.Ruta).WithMany(x => x.Puntos).HasForeignKey(x => x.RutaId).OnDelete(DeleteBehavior.Restrict); });

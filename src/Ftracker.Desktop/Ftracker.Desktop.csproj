@@ -6,4 +6,5 @@
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="..\Ftracker.Infrastructure\Ftracker.Infrastructure.csproj" /></ItemGroup>
   <ItemGroup><Resource Include="Assets\ftracker-logo.png" /><Resource Include="Assets\ftracker.ico" /></ItemGroup>
+  <ItemGroup><Resource Include="Assets\croquis-fime-limpio-v1.png" /></ItemGroup>
 </Project>

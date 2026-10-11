@@ -14,7 +14,7 @@ public sealed class LocalSession : ISession
     public void SignOut() => User = null;
 }
 
-public sealed class LocalStore
+public sealed partial class LocalStore
 {
     private readonly DbContextOptions<FtrackerDbContext> options;
     public string DataDirectory { get; }
@@ -27,7 +27,20 @@ public sealed class LocalStore
         options = new DbContextOptionsBuilder<FtrackerDbContext>().UseSqlite(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = Path.Combine(DataDirectory, "ftracker-desktop.db"), ForeignKeys = true }.ToString()).Options;
     }
     public FtrackerDbContext Open() => new(options);
-    public async Task InitializeAsync() { await using var db = Open(); await db.Database.EnsureCreatedAsync(); }
+    public async Task InitializeAsync()
+    {
+        await using var db = Open();
+        await db.Database.EnsureCreatedAsync();
+        // Additive, idempotent upgrade for databases created by the original beta.
+        // No existing tables, users, rounds or evidence are modified.
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "UbicacionesCroquis" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_UbicacionesCroquis" PRIMARY KEY,
+                "X" REAL NOT NULL, "Y" REAL NOT NULL,
+                CONSTRAINT "CK_UbicacionesCroquis_Rango" CHECK (X >= 0 AND X <= 1 AND Y >= 0 AND Y <= 1)
+            );
+            """);
+    }
     public async Task<bool> NeedsSetupAsync() { await using var db = Open(); return !await db.Users.AnyAsync(); }
     public async Task SetupAsync(string name, string email, string password)
     {

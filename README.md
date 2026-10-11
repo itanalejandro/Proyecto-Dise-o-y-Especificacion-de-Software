@@ -56,7 +56,20 @@ Para coordinar cambios, trabajar en una rama por tarea y revisar los cambios ant
 
 ## Comodidad de uso
 
-La navegación lateral agrupa rondines, incidencias y catálogos; las tarjetas muestran los totales. Las tablas tienen búsqueda por texto (sin distinguir mayúsculas ni acentos), selección de fila completa y mensajes cuando están vacías. Las acciones se habilitan según la selección y el estado del registro. La fecha de asignación se elige con calendario y la hora se escribe en formato de 24 horas.
+### Croquis interactivo
+
+1. Como administrador, selecciona una ruta en **Rutas y puntos** y pulsa **Ubicar en croquis**.
+2. Selecciona un punto en la lista y haz clic en el mapa para colocarlo o moverlo. Repite con los demás y pulsa **Guardar ubicaciones**. **Quitar ubicación** deja un punto únicamente en la lista.
+3. Como prefecto, selecciona un rondín en **Mis rondines** y pulsa **Ver croquis**. Los programados permiten consultar la ruta; para registrar resultados, primero inicia el rondín desde la pantalla principal.
+4. En un rondín en curso, selecciona un marcador o un punto de la lista y pulsa **Completar punto** u **Omitir punto**. Omitir requiere una observación. Azul significa pendiente, verde completado y ámbar omitido. Los rondines cerrados y la vista de administrador son de consulta.
+
+El zoom, las barras de desplazamiento y **Ajustar** permiten explorar el área. Los puntos sin ubicación siguen disponibles en la lista. Las ubicaciones se copian al iniciar un rondín: editar la ruta no altera los recorridos ya iniciados. Los rondines antiguos no tienen posiciones históricas y se muestran sin marcadores. No hay GPS y las líneas solo indican orden, no caminos reales.
+
+El croquis se incluye en la aplicación y funciona sin internet. Al iniciar se añade de forma automática e idempotente la tabla de ubicaciones, sin borrar datos existentes. Conviene respaldar antes de actualizar. Véase `src/Ftracker.Desktop/Assets/CROQUIS.md` para detalles y limitaciones.
+
+### Navegación y formularios
+
+La navegación lateral agrupa rondines, incidencias y catálogos. El encabezado compacto muestra el logo, el usuario y las acciones de sesión, sin tarjetas de resumen. Las tablas tienen búsqueda por texto (sin distinguir mayúsculas ni acentos), selección de fila completa y mensajes cuando están vacías. Las acciones se habilitan según la selección y el estado del registro. La fecha de asignación se elige con calendario y la hora se escribe en formato de 24 horas.
 
 Los formularios muestran los errores sin cerrarse ni borrar lo escrito. Las desactivaciones y el cierre de sesión requieren confirmación. La configuración inicial solicita confirmar la contraseña. Tab permite moverse entre controles y Escape cancelar un formulario.
 
@@ -91,4 +104,4 @@ Se retiró el código fuente del proyecto ASP.NET Core y se sustituyó por Deskt
 
 ## Alcance y pendientes
 
-Incluye alta y activación/desactivación de usuarios/rutas, puntos iniciales, asignación, ejecución, cierre, incidencias, evidencias, resumen y bitácora. Aún faltan edición de perfiles y puntos existentes, cambio/recuperación de contraseña, cancelación/reasignación, filtros avanzados y un instalador. La creación automática del esquema sirve para esta beta; los cambios futuros de estructura requerirán migraciones.
+Incluye alta y activación/desactivación de usuarios/rutas, puntos iniciales, croquis interactivo, asignación, ejecución, cierre, incidencias, evidencias, resumen y bitácora. Aún faltan edición de perfiles y nombres/orden de puntos existentes, cambio/recuperación de contraseña, cancelación/reasignación, filtros avanzados y un instalador. La creación automática del esquema y la actualización aditiva del croquis sirven para esta beta; otros cambios futuros de estructura requerirán migraciones.

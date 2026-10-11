@@ -22,7 +22,15 @@ public sealed class RondinService(FtrackerDbContext db, ISession session) : IRon
         if (!r.Ruta.Activa) throw new ReglaNegocioException("La ruta está desactivada.");
         var puntos = r.Ruta.Puntos.Where(x => x.Activo).OrderBy(x => x.Orden).ToList(); if (puntos.Count == 0) throw new ReglaNegocioException("La ruta no tiene puntos activos.");
         r.Estado = RondinEstado.EnCurso; r.IniciadoEn = DateTime.UtcNow; r.ActualizadoEn = DateTime.UtcNow;
-        foreach (var p in puntos) db.RegistrosPunto.Add(new RegistroPunto { RondinId = r.Id, PuntoControlId = p.Id, PuntoNombre = p.Nombre, Orden = p.Orden, CreadoPorId = actorId });
+        var ids = puntos.Select(x => x.Id).ToArray();
+        var locations = await db.UbicacionesCroquis.Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        foreach (var p in puntos)
+        {
+            var registro = new RegistroPunto { RondinId = r.Id, PuntoControlId = p.Id, PuntoNombre = p.Nombre, Orden = p.Orden, CreadoPorId = actorId };
+            db.RegistrosPunto.Add(registro);
+            if (locations.TryGetValue(p.Id, out var location))
+                db.UbicacionesCroquis.Add(new UbicacionCroquis { Id = registro.Id, X = location.X, Y = location.Y });
+        }
         await Auditar(actorId, "Iniciar", "Rondin", r.Id, null, ct); await db.SaveChangesAsync(ct); return r;
     }
     public async Task<RegistroPunto> MarcarPuntoAsync(Guid rondinId, Guid registroId, MarcarPuntoCommand c, string actorId, CancellationToken ct = default)
