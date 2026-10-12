@@ -110,7 +110,7 @@ public sealed partial class LocalStore
         catch { File.Delete(destination); throw; }
     }
     public void RequireAdmin() { if (Session.Role != Roles.Administrador) throw new ReglaNegocioException("Se requiere administrador."); }
-    private void Audit(FtrackerDbContext db, string action, string id) => db.Auditorias.Add(new Auditoria { ActorId = Session.UserId!, Accion = action, Entidad = "Catalogo", EntidadId = id });
+    private void Audit(FtrackerDbContext db, string action, string id, string? detail = null) => db.Auditorias.Add(new Auditoria { ActorId = Session.UserId!, Accion = action, Entidad = "Catalogo", EntidadId = id, Detalle = detail });
     private static ApplicationUser CreateUser(string name, string email, string password, string role)
     {
         if (string.IsNullOrWhiteSpace(name) || !System.Net.Mail.MailAddress.TryCreate(email.Trim(), out _) || password.Length < 12 || (role != Roles.Administrador && role != Roles.Prefecto)) throw new ReglaNegocioException("Escribe nombre, correo válido, rol y una contraseña de al menos 12 caracteres.");

@@ -57,6 +57,7 @@ public sealed class MainWindow : Window
             management.Children.Add(ActionButton("Asignar rondín", Assign));
             management.Children.Add(ActionButton("Reasignar", ReassignRound, () => rounds.SelectedItem is RoundRow { Estado: RondinEstado.Programado }));
             management.Children.Add(ActionButton("Cancelar rondín", CancelRound, () => rounds.SelectedItem is RoundRow { Estado: RondinEstado.Programado or RondinEstado.EnCurso }));
+            management.Children.Add(DangerButton("Eliminar rondín", DeleteRound, () => rounds.SelectedItem is RoundRow));
         }
         management.Children.Add(ActionButton("Ver croquis", ShowRoundCroquis, () => rounds.SelectedItem is RoundRow));
         AddSearch(panel, rounds, "Buscar por ruta, prefecto o estado");
@@ -83,7 +84,7 @@ public sealed class MainWindow : Window
     }
     private void BuildUsers()
     {
-        var panel = NewTab("Usuarios", "Crea cuentas para el equipo y administra su acceso."); var bar = new WrapPanel(); bar.Children.Add(ActionButton("Nuevo usuario", AddUser)); bar.Children.Add(ActionButton("Activar / desactivar", ToggleUser, () => users.SelectedItem is UserRow u && u.Id != store.Session.UserId)); panel.Children.Add(bar);
+        var panel = NewTab("Usuarios", "Crea cuentas para el equipo y administra su acceso."); var bar = new WrapPanel(); bar.Children.Add(ActionButton("Nuevo usuario", AddUser)); bar.Children.Add(ActionButton("Activar / desactivar", ToggleUser, () => users.SelectedItem is UserRow u && u.Id != store.Session.UserId)); bar.Children.Add(DangerButton("Eliminar usuario", DeleteUser, () => users.SelectedItem is UserRow u && u.Id != store.Session.UserId)); panel.Children.Add(bar);
         AddSearch(panel, users, "Buscar por nombre, correo o rol");
         users.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Users))); users.Height = 350; AddTable(panel, users, "No hay usuarios que coincidan con la búsqueda.");
     }
@@ -91,6 +92,7 @@ public sealed class MainWindow : Window
     {
         var panel = NewTab("Rutas y puntos", "Organiza los recorridos y el orden de sus puntos de revisión."); var bar = new WrapPanel(); bar.Children.Add(ActionButton("Nueva ruta", AddRoute)); bar.Children.Add(ActionButton("Activar / desactivar", ToggleRoute, () => routes.SelectedItem is RouteRow)); bar.Children.Add(ActionButton("Ver puntos", ShowRoute, () => routes.SelectedItem is RouteRow)); panel.Children.Add(bar);
         bar.Children.Add(ActionButton("Ubicar en croquis", EditRouteCroquis, () => routes.SelectedItem is RouteRow));
+        bar.Children.Add(DangerButton("Eliminar ruta", DeleteRoute, () => routes.SelectedItem is RouteRow));
         AddSearch(panel, routes, "Buscar ruta por nombre");
         routes.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Routes))); routes.Height = 350; AddTable(panel, routes, "Crea tu primera ruta con sus puntos de revisión.");
     }
@@ -134,6 +136,25 @@ public sealed class MainWindow : Window
     }
     private async Task ToggleUser() { var u = Selected<UserRow>(users); if (!Confirm($"¿Quieres {(u.Activo ? "desactivar" : "activar")} la cuenta de {u.Nombre}?")) return; await store.ToggleUserAsync(u.Id); await Refresh(); }
     private async Task ToggleRoute() { var r = Selected<RouteRow>(routes); if (!Confirm($"¿Quieres {(r.Activa ? "desactivar" : "activar")} la ruta {r.Nombre}?")) return; await store.ToggleRouteAsync(r.Id); await Refresh(); }
+    private async Task DeleteUser()
+    {
+        var u = Selected<UserRow>(users);
+        if (!Confirm($"¿Eliminar definitivamente la cuenta de {u.Nombre} ({u.Correo})?\n\nEsta acción no se puede deshacer. Si solo quieres impedir su acceso, usa Activar / desactivar.", destructive: true)) return;
+        await store.DeleteUserAsync(u.Id); await Refresh(); status.Text = $"Usuario {u.Nombre} eliminado.";
+    }
+    private async Task DeleteRoute()
+    {
+        var r = Selected<RouteRow>(routes);
+        if (!Confirm($"¿Eliminar definitivamente la ruta {r.Nombre} con sus {r.Puntos} punto(s) y sus ubicaciones en el croquis?\n\nEsta acción no se puede deshacer. Si la ruta ya tiene rondines, deberás eliminarlos primero; para conservarlos, desactiva la ruta.", destructive: true)) return;
+        await store.DeleteRouteAsync(r.Id); await Refresh(); status.Text = $"Ruta {r.Nombre} eliminada.";
+    }
+    private async Task DeleteRound()
+    {
+        var r = Selected<RoundRow>(rounds);
+        var warning = r.Estado == RondinEstado.EnCurso ? "\n\nATENCIÓN: el rondín está en curso; el prefecto perderá su avance." : "";
+        if (!Confirm($"¿Eliminar definitivamente el rondín de {r.Ruta} asignado a {r.Prefecto} ({FriendlyValueConverter.Label(r.Programado)})?\n\nSe borrarán también sus puntos registrados, incidencias y archivos de evidencia. Esta acción no se puede deshacer. Si solo quieres detenerlo conservando el historial, usa Cancelar rondín.{warning}", destructive: true)) return;
+        await store.DeleteRoundAsync(r.Id); await Refresh(); status.Text = "Rondín eliminado.";
+    }
     private async Task ShowRoute()
     {
         var r = Selected<RouteRow>(routes); await using var db = store.Open(); var list = await db.PuntosControl.Where(x => x.RutaId == r.Id).OrderBy(x => x.Orden).ToListAsync();
@@ -158,8 +179,8 @@ public sealed class MainWindow : Window
         var d = new Editor(this, "Asignar rondín"); var route = d.Choice("Ruta", available, "Nombre"); var prefect = d.Choice("Prefecto", prefects, "Nombre"); var (date, time) = d.Schedule(); var notes = d.Text("Observaciones (opcional)");
         if (d.Save(async () =>
         {
-            if (date.SelectedDate is not DateTime selected || !TimeOnly.TryParseExact(time.Text.Trim(), "HH:mm", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var hour)) throw new ReglaNegocioException("Selecciona una fecha y escribe la hora en formato de 24 horas, por ejemplo 14:30.");
-            var scheduled = DateTime.SpecifyKind(selected.Date + hour.ToTimeSpan(), DateTimeKind.Local).ToUniversalTime();
+            if (date.SelectedDate is not DateTime selected) throw new ReglaNegocioException("Selecciona la fecha del recorrido.");
+            var scheduled = DateTime.SpecifyKind(selected.Date + time.Value.ToTimeSpan(), DateTimeKind.Local).ToUniversalTime();
             await using var db = store.Open(); await new RondinService(db, store.Session).CrearAsync(new(((RouteRow)route.SelectedItem).Id, ((UserRow)prefect.SelectedItem).Id, scheduled, notes.Text), store.Session.UserId!);
         })) await Refresh();
     }
@@ -251,7 +272,7 @@ public sealed class MainWindow : Window
         finally { busy = false; tabs.IsEnabled = true; UpdateActions(); if (status.Text == "Procesando…") status.Text = "Listo."; }
     }
     private bool CanMark() => rounds.SelectedItem is RoundRow { Estado: RondinEstado.EnCurso } && points.SelectedItem is PointRow { Resultado: RegistroResultado.Pendiente };
-    private bool Confirm(string message) => MessageBox.Show(this, message, "Confirmar · Ftracker", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+    private bool Confirm(string message, bool destructive = false) => MessageBox.Show(this, message, destructive ? "Confirmar eliminación · Ftracker" : "Confirmar · Ftracker", MessageBoxButton.YesNo, destructive ? MessageBoxImage.Warning : MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
     private void UpdateActions() { foreach (var (button, enabled) in contextualActions) button.IsEnabled = !busy && enabled(); }
     private Button ActionButton(string title, Func<Task> action, Func<bool>? enabledWhen = null)
     {
@@ -260,6 +281,10 @@ public sealed class MainWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(b, title);
         contextualActions.Add((b, enabledWhen ?? (() => true)));
         b.Click += async (_, _) => await Run(action); return b;
+    }
+    private Button DangerButton(string title, Func<Task> action, Func<bool> enabledWhen)
+    {
+        var b = ActionButton(title, action, enabledWhen); b.Style = (Style)FindResource("DangerButton"); return b;
     }
     private StackPanel NewTab(string title, string description = "")
     {
@@ -330,10 +355,12 @@ internal sealed class Editor : Window
         else { var factory = new FrameworkElementFactory(typeof(TextBlock)); factory.SetBinding(TextBlock.TextProperty, new Binding { Converter = new FriendlyValueConverter() }); box.ItemTemplate = new DataTemplate { VisualTree = factory }; }
         AddField(box, label); return box;
     }
-    public (DatePicker Date, TextBox Time) Schedule()
+    public (DatePicker Date, TimeSelector Time) Schedule()
     {
-        Label("Fecha del recorrido"); var date = new DatePicker { SelectedDate = DateTime.Today }; AddField(date, "Fecha del recorrido");
-        var time = Text("Hora local (24 horas, por ejemplo 14:30)", DateTime.Now.ToString("HH:mm")); return (date, time);
+        Label("Fecha del recorrido"); var date = new DatePicker { SelectedDate = DateTime.Today, Language = System.Windows.Markup.XmlLanguage.GetLanguage("es-MX"), SelectedDateFormat = DatePickerFormat.Short }; AddField(date, "Fecha del recorrido");
+        Label("Hora"); var time = new TimeSelector(TimeOnly.FromDateTime(DateTime.Now)) { SelectedDate = date.SelectedDate };
+        date.SelectedDateChanged += (_, _) => time.SelectedDate = date.SelectedDate;
+        AddField(time, "Hora"); return (date, time);
     }
     private void AddField(Control field, string name) { panel.Children.Add(field); fields.Add(field); System.Windows.Automation.AutomationProperties.SetName(field, name); }
     public bool Accept() => Save(() => Task.CompletedTask, "Continuar");

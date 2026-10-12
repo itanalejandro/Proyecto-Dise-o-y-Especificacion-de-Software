@@ -26,6 +26,20 @@ En **Rondines**, el administrador puede **Reasignar** un recorrido programado a 
 
 **Cancelar rondín** permite detener uno programado o en curso. Exige un motivo, informa que la acción no se puede deshacer y conserva los puntos, incidencias y evidencias ya guardados. El prefecto deja de poder iniciar, registrar puntos, reportar incidencias o adjuntar evidencias a ese recorrido. El administrador puede seguir atendiendo sus incidencias. El motivo y el estado anterior se registran en la bitácora; no se sobrescriben las observaciones iniciales del rondín.
 
+### Eliminar usuarios, rutas y rondines
+
+Solo el administrador ve estos botones. Todos piden confirmación y la acción **no se puede deshacer**; cada eliminación queda en la bitácora.
+
+- **Eliminar usuario** (pestaña Usuarios): no se puede eliminar la propia cuenta ni al último administrador activo. Si el usuario tiene rondines asignados se bloquea; elimina esos rondines primero o usa *Activar / desactivar* para conservar el historial.
+- **Eliminar ruta** (pestaña Rutas y puntos): borra la ruta, sus puntos y sus ubicaciones en el croquis. Se bloquea si algún rondín la usa.
+- **Eliminar rondín** (pestaña Rondines): borra el rondín con sus puntos registrados, incidencias y archivos de evidencia (también del disco). Para detener un rondín conservando todo, usa *Cancelar rondín*.
+
+### Hora al asignar un rondín
+
+Pulsa **Elegir en reloj** para abrir un reloj interactivo con la fecha y la hora seleccionadas a la derecha. Primero pulsa la hora o arrastra su manecilla; al soltar se pasa a los minutos, marcados de cinco en cinco. **Horas** y **Minutos** permiten cambiar de selección; también puedes tomar la punta de una manecilla para moverla.
+
+Elige explícitamente **a. m.** o **p. m.**. Para minutos exactos usa **−1 min**, **+1 min** o las flechas del teclado sobre el reloj; H selecciona horas y M minutos. **Usar esta hora** confirma; **Cancelar** conserva la hora anterior. También puedes escribir **HH:mm** en formato de 24 horas directamente en el formulario. Debajo se muestra la fecha y su equivalente con a. m./p. m.; una hora inválida impide guardar. El reloj cambia la hora, no el día: la fecha se selecciona en el calendario.
+
 ### Revisar evidencias dentro de Ftracker
 
 En **Incidencias**, selecciona un reporte con archivos adjuntos y pulsa **Ver evidencia**. La ventana permite elegir entre sus archivos y visualizar imágenes JPG/PNG con zoom, **Ajustar** y **100 %**. Las imágenes grandes usan una vista previa de hasta 2400 píxeles por lado mayor para limitar el consumo de memoria; 100 % se refiere al tamaño de esa vista previa. El original no se modifica ni se exporta automáticamente.
@@ -81,7 +95,7 @@ El croquis se incluye en la aplicación y funciona sin internet. Al iniciar se a
 
 ### Navegación y formularios
 
-La navegación lateral agrupa rondines, incidencias y catálogos. El encabezado compacto muestra el logo, el usuario y las acciones de sesión, sin tarjetas de resumen. Las tablas tienen búsqueda por texto (sin distinguir mayúsculas ni acentos), selección de fila completa y mensajes cuando están vacías. Las acciones se habilitan según la selección y el estado del registro. La fecha de asignación se elige con calendario y la hora se escribe en formato de 24 horas.
+La navegación lateral agrupa rondines, incidencias y catálogos. El encabezado compacto muestra el logo, el usuario y las acciones de sesión, sin tarjetas de resumen. Las tablas tienen búsqueda por texto (sin distinguir mayúsculas ni acentos), selección de fila completa y mensajes cuando están vacías. Las acciones se habilitan según la selección y el estado del registro. La fecha de asignación se elige con calendario y la hora mediante el reloj interactivo o escritura en formato de 24 horas.
 
 Los formularios muestran los errores sin cerrarse ni borrar lo escrito. Las desactivaciones y el cierre de sesión requieren confirmación. La configuración inicial solicita confirmar la contraseña. Tab permite moverse entre controles y Escape cancelar un formulario.
 

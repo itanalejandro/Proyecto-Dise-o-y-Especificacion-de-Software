@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -53,13 +54,17 @@ internal static class Program
         var grid = Descendants<DataGrid>(window).Single();
         grid.SelectedItem = ((MainViewModel)window.DataContext).Users.Single(x => x.Rol == Roles.Prefecto);
         Check(toggle.IsEnabled, "Acción habilitada para usuario seleccionado");
+        Check(Descendants<Button>(window).Single(x => (string?)x.Content == "Eliminar usuario").IsEnabled, "Eliminar usuario se habilita con otro usuario seleccionado");
         grid.SelectedItem = ((MainViewModel)window.DataContext).Users.Single(x => x.Rol == Roles.Administrador);
         Check(!toggle.IsEnabled, "No permite desactivar la propia cuenta");
+        Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Eliminar usuario").IsEnabled, "No permite eliminar la propia cuenta");
         tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Rutas y puntos"); window.UpdateLayout();
         var search = Descendants<TextBox>(window).Single(x => AutomationProperties.GetName(x).StartsWith("Buscar"));
         search.Text = "edificio a"; grid = Descendants<DataGrid>(window).Single(); Check(grid.Items.Count == 1, "Búsqueda sin distinguir acentos");
         search.Text = "no existe"; Check(grid.Items.Count == 0, "Filtro sin resultados"); search.Clear();
+        Check(new TimeSelector(new TimeOnly(15, 50)).Value == new TimeOnly(15, 50) && new TimeSelector(new TimeOnly(0, 5)).Value == new TimeOnly(0, 5) && new TimeSelector(new TimeOnly(12, 0)).Value == new TimeOnly(12, 0), "Selector de hora conserva horas de 12 y 24 horas");
         var previewDir = Path.Combine(Environment.CurrentDirectory, "artifacts"); Directory.CreateDirectory(previewDir);
+        CheckClock(window, previewDir);
         SaveImage(window, Path.Combine(previewDir, "interfaz-administrador.png"));
         var editor = new Editor(window, "Validación de formulario"); var input = editor.Text("Nombre"); input.Text = "Conservar este contenido";
         Exception? dialogError = null;
@@ -240,6 +245,57 @@ internal static class Program
         Check((await File.ReadAllBytesAsync(attachments.Single(x => x.NombreOriginal == "prueba.png").RutaArchivo)).SequenceEqual(originalBytes) &&
             Directory.GetFiles(Path.Combine(store.DataDirectory, "evidencias")).Length == fileCount, "Vista previa no altera archivos ni crea copias");
         viewer.Close();
+    }
+    private static void CheckClock(Window owner, string previewDir)
+    {
+        var clock = new ClockTimeWindow(new TimeOnly(15, 35), new DateTime(2026, 10, 11))
+        { Owner = owner, ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500, Top = 0 };
+        clock.Show(); clock.UpdateLayout();
+        var dial = Descendants<ClockDial>(clock).Single();
+        Check(clock.Value == new TimeOnly(15, 35), "Reloj conserva hora inicial y periodo p. m.");
+        var center = new Point(dial.ActualWidth / 2, dial.ActualHeight / 2);
+        dial.Part = ClockPart.Hours; dial.SelectAt(new Point(center.X, 25));
+        Check(clock.Value == new TimeOnly(12, 35), "Seleccionar 12 p. m. conserva mediodía");
+        dial.FinishSelection(); Check(dial.Part == ClockPart.Minutes, "Tras elegir hora se seleccionan minutos");
+        dial.SelectAt(new Point(center.X + 110, center.Y)); Check(clock.Value == new TimeOnly(12, 15), "Reloj marca minutos de cinco en cinco");
+        dial.SelectAt(new Point(center.X, 25)); Check(clock.Value.Minute == 0, "Parte superior del reloj corresponde al minuto cero");
+        Descendants<Button>(clock).Single(x => (string?)x.Content == "a. m.").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(clock.Value == new TimeOnly(0, 0), "Seleccionar 12 a. m. corresponde a medianoche");
+        Descendants<Button>(clock).Single(x => (string?)x.Content == "−1 min").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Check(clock.Value == new TimeOnly(23, 59), "Ajuste exacto de minutos cruza medianoche sin cambiar fecha seleccionada");
+        var before = clock.Value;
+        Check(!dial.SelectAt(center) && !dial.SelectAt(new Point(-100, -100)) && clock.Value == before, "Centro y puntos fuera del reloj no cambian la hora");
+        dial.SetValue(new TimeOnly(17, 35));
+        Check(Descendants<TextBlock>(clock).Any(x => x.Text == "5:35 p. m.") && Descendants<TextBlock>(clock).Any(x => x.Text.Contains("octubre") && x.Text.Contains("2026")), "Reloj muestra fecha y hora elegidas a la derecha");
+        dial.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(clock)!, Environment.TickCount, Key.Right) { RoutedEvent = Keyboard.KeyDownEvent });
+        Check(clock.Value == new TimeOnly(17, 36), "Flechas del reloj permiten minutos exactos");
+        dial.SetValue(new TimeOnly(17, 35)); dial.Part = ClockPart.Hours; SaveImage(clock, Path.Combine(previewDir, "interfaz-reloj-horas.png"));
+        dial.Part = ClockPart.Minutes; SaveImage(clock, Path.Combine(previewDir, "interfaz-reloj-minutos.png")); clock.Close();
+        var editor = new Editor(owner, "Programar recorrido") { ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500 };
+        var (date, selector) = editor.Schedule(); editor.Show(); editor.UpdateLayout(); date.SelectedDate = new DateTime(2026, 10, 12);
+        var input = Descendants<TextBox>(selector).Single(); input.Text = "17:37";
+        Check(selector.Value == new TimeOnly(17, 37) && Descendants<TextBlock>(selector).Any(x => x.Text == "12/10/2026 · 5:37 p. m."), "Captura exacta sincroniza fecha y hora del formulario");
+        input.Text = "25:90"; var rejected = false; try { _ = selector.Value; } catch (ReglaNegocioException) { rejected = true; }
+        Check(rejected, "Hora escrita inválida bloquea guardado"); input.Text = "17:37";
+        foreach (var accept in new[] { false, true })
+        {
+            Exception? modalError = null;
+            _ = Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() =>
+            {
+                var modal = System.Windows.Application.Current.Windows.OfType<ClockTimeWindow>().Single();
+                try
+                {
+                    modal.Left = -2500; Descendants<ClockDial>(modal).Single().SetValue(new TimeOnly(20, 45));
+                    Descendants<Button>(modal).Single(x => (string?)x.Content == (accept ? "Usar esta hora" : "Cancelar")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+                catch (Exception ex) { modalError = ex; modal.Close(); }
+            }));
+            Descendants<Button>(selector).Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            if (modalError is not null) throw modalError;
+            Check(selector.Value == (accept ? new TimeOnly(20, 45) : new TimeOnly(17, 37)), accept ? "Aceptar reloj actualiza hora del formulario" : "Cancelar reloj conserva la hora previa");
+        }
+        date.SelectedDate = null; Check(Descendants<TextBlock>(selector).Any(x => x.Text.StartsWith("Sin fecha")), "Sin fecha el formulario no muestra una programación engañosa");
+        date.SelectedDate = new DateTime(2026, 10, 12); SaveImage(editor, Path.Combine(previewDir, "interfaz-programacion.png")); editor.Close();
     }
     private static async Task Until(Func<bool> condition)
     {

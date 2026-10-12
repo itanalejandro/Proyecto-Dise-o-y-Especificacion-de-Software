@@ -100,6 +100,7 @@ store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLoca
 await using (var db = store.Open()) { var svc = new IncidenciaService(db, store.Session); await svc.CambiarEstadoAsync(incidentId, new(IncidenciaEstado.EnRevision, "Revisando"), store.Session.UserId!); await svc.CambiarEstadoAsync(incidentId, new(IncidenciaEstado.Resuelta, "Reparado"), store.Session.UserId!); }
 Check((await store.GetEvidenceAsync(incidentId)).Count == 1 && (await store.ReadEvidenceAsync(attachments[0].Id)).Length > 0, "Administrador consulta evidencia de rondín cerrado");
 await CheckRoundManagement(store, routeId, roundId, evidencePath);
+await CheckDeletion(store, evidencePath);
 await using (var db = store.Open()) { Check(await db.Rondines.AnyAsync(x => x.Id == roundId && x.Estado == RondinEstado.Cerrado), "Rondín cerrado persistido"); Check(await db.Auditorias.CountAsync() >= 8, "Auditoría persistida"); var prefect = await db.Users.SingleAsync(x => x.Email == "prefecto@example.com"); await store.ToggleUserAsync(prefect.Id); }
 await Reject(() => store.LoginAsync("prefecto@example.com", "PrefectoLocal123!"), "Usuario desactivado bloqueado");
 Console.WriteLine("PRUEBAS COMPLETADAS. Base aislada: " + directory);
@@ -200,4 +201,47 @@ static async Task CheckRoundManagement(LocalStore store, Guid routeId, Guid clos
         Check(await db.Rondines.AnyAsync(x => x.Id == concurrentId && x.Estado == RondinEstado.EnCurso) &&
             !await db.Auditorias.AnyAsync(x => x.EntidadId == concurrentId.ToString() && x.Accion == "Cancelar"), "Conflicto no guarda cancelación ni auditoría parcial");
     }
+}
+
+static async Task CheckDeletion(LocalStore store, string evidencePath)
+{
+    // Se espera sesión de administrador.
+    await store.AddUserAsync("Prefecto borrable", "borrable@example.com", "Borrable12345!", Roles.Prefecto);
+    await store.AddRouteAsync("Ruta borrable", "Prueba de eliminación", "Uno\nDos");
+    string userId; Guid routeId; Guid roundId; Guid incidentId;
+    await using (var db = store.Open())
+    {
+        userId = (await db.Users.SingleAsync(x => x.Email == "borrable@example.com")).Id;
+        routeId = (await db.Rutas.SingleAsync(x => x.Nombre == "Ruta borrable")).Id;
+        roundId = (await new RondinService(db, store.Session).CrearAsync(new(routeId, userId, DateTime.UtcNow, null), store.Session.UserId!)).Id;
+    }
+    await Reject(() => store.DeleteUserAsync(store.Session.UserId!), "No elimina la propia cuenta");
+    await Reject(() => store.DeleteUserAsync(userId), "No elimina usuario con rondines asignados");
+    await Reject(() => store.DeleteRouteAsync(routeId), "No elimina ruta usada por rondines");
+    store.Session.SignOut(); await store.LoginAsync("borrable@example.com", "Borrable12345!");
+    await Reject(() => store.DeleteRoundAsync(roundId), "Prefecto no puede eliminar rondines");
+    await Reject(() => store.DeleteUserAsync(userId), "Prefecto no puede eliminar usuarios");
+    await Reject(() => store.DeleteRouteAsync(routeId), "Prefecto no puede eliminar rutas");
+    await using (var db = store.Open()) { await new RondinService(db, store.Session).IniciarAsync(roundId, store.Session.UserId!); }
+    await using (var db = store.Open()) { incidentId = (await new IncidenciaService(db, store.Session).CrearAsync(new(roundId, null, "Mantenimiento", IncidenciaPrioridad.Baja, "Para eliminar"), store.Session.UserId!)).Id; }
+    await store.SaveEvidenceAsync(incidentId, evidencePath);
+    var evidenceFile = (await store.GetEvidenceAsync(incidentId))[0].RutaArchivo;
+    Check(File.Exists(evidenceFile), "Evidencia de prueba guardada antes de eliminar");
+    store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+    await store.DeleteRoundAsync(roundId);
+    await using (var db = store.Open())
+    {
+        Check(!await db.Rondines.AnyAsync(x => x.Id == roundId) && !await db.RegistrosPunto.AnyAsync(x => x.RondinId == roundId) &&
+            !await db.Incidencias.AnyAsync(x => x.Id == incidentId) && !await db.Evidencias.AnyAsync(x => x.IncidenciaId == incidentId), "Eliminar rondín borra puntos, incidencias y evidencias");
+        Check(await db.Auditorias.AnyAsync(x => x.EntidadId == roundId.ToString() && x.Accion == "EliminarRondin"), "Eliminar rondín queda en bitácora");
+        Check(await db.Rutas.AnyAsync(x => x.Id == routeId) && await db.Users.AnyAsync(x => x.Id == userId), "Eliminar rondín conserva ruta y prefecto");
+    }
+    Check(!File.Exists(evidenceFile), "Eliminar rondín borra el archivo de evidencia");
+    await Reject(() => store.DeleteRoundAsync(roundId), "No elimina dos veces el mismo rondín");
+    await store.DeleteRouteAsync(routeId);
+    await using (var db = store.Open()) { Check(!await db.Rutas.AnyAsync(x => x.Id == routeId) && !await db.PuntosControl.AnyAsync(x => x.RutaId == routeId), "Eliminar ruta borra sus puntos"); }
+    await store.DeleteUserAsync(userId);
+    await using (var db = store.Open()) { Check(!await db.Users.AnyAsync(x => x.Id == userId) && await db.Auditorias.AnyAsync(x => x.EntidadId == userId && x.Accion == "EliminarUsuario"), "Eliminar usuario persiste y audita"); }
+    await Reject(() => store.LoginAsync("borrable@example.com", "Borrable12345!"), "Usuario eliminado no puede iniciar sesión");
+    await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
 }
