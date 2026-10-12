@@ -16,7 +16,7 @@ public sealed class MainWindow : Window
     private readonly TabControl tabs = new();
     private readonly DataGrid users = Table(("Nombre", "Nombre"), ("Correo", "Correo"), ("Rol", "Rol"), ("Activo", "Activo"));
     private readonly DataGrid routes = Table(("Ruta", "Nombre"), ("Puntos", "Puntos"), ("Activa", "Activa"));
-    private readonly DataGrid rounds = Table(("Ruta", "Ruta"), ("Prefecto", "Prefecto"), ("Programado", "Programado"), ("Estado", "Estado"));
+    private readonly DataGrid rounds = Table(("Ruta", "Ruta"), ("Prefecto", "Prefecto"), ("Programado", "Programado"), ("Estado", "Estado"), ("Cerrado el", "CerradoEl"));
     private readonly DataGrid points = Table(("Punto", "Nombre"), ("Resultado", "Resultado"), ("Observación", "Observaciones"));
     private readonly DataGrid incidents = Table(("Ruta", "Ruta"), ("Tipo", "Tipo"), ("Descripción", "Descripcion"), ("Prioridad", "Prioridad"), ("Estado", "Estado"), ("Evidencias", "Archivos"));
     private readonly TextBlock status = new() { Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap };
@@ -50,6 +50,8 @@ public sealed class MainWindow : Window
     }
     private void BuildRounds()
     {
+        rounds.Columns[4].SortMemberPath = nameof(RoundRow.CerradoEn);
+        rounds.Columns[4].MinWidth = 145;
         var panel = NewTab(vm.IsAdmin ? "Rondines" : "Mis rondines", vm.IsAdmin ? "Asigna recorridos y consulta su avance." : "Selecciona un rondín para iniciarlo y revisar sus puntos.");
         var management = new WrapPanel(); panel.Children.Add(management);
         if (vm.IsAdmin)
@@ -64,6 +66,7 @@ public sealed class MainWindow : Window
         rounds.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Rounds))); rounds.Height = vm.IsAdmin ? 350 : 200; AddTable(panel, rounds, vm.IsAdmin ? "Todavía no hay rondines. Crea una ruta y un prefecto para asignar el primero." : "Aún no tienes rondines asignados. Consulta con tu administrador.");
         if (!vm.IsAdmin)
         {
+            ConfigurePointEvidence();
             var bar = new WrapPanel(); bar.Children.Add(ActionButton("Iniciar rondín", Start, () => rounds.SelectedItem is RoundRow { Estado: RondinEstado.Programado })); bar.Children.Add(ActionButton("Completar punto", () => Mark(RegistroResultado.Completado), CanMark)); bar.Children.Add(ActionButton("Omitir punto", () => Mark(RegistroResultado.Omitido), CanMark)); bar.Children.Add(ActionButton("Cerrar rondín", CloseRound, () => rounds.SelectedItem is RoundRow { Estado: RondinEstado.EnCurso } && points.Items.Count > 0 && points.Items.Cast<PointRow>().All(x => x.Resultado != RegistroResultado.Pendiente))); panel.Children.Add(bar);
             panel.Children.Add(new TextBlock { Text = "Puntos del rondín seleccionado", FontWeight = FontWeights.Bold });
             points.Height = 200; AddTable(panel, points, "Los puntos aparecerán al iniciar el rondín seleccionado.");
@@ -121,8 +124,63 @@ public sealed class MainWindow : Window
     {
         if (rounds.SelectedItem is not RoundRow r) { points.ItemsSource = null; return; }
         await using var db = store.Open();
-        points.ItemsSource = await db.RegistrosPunto.AsNoTracking().Where(x => x.RondinId == r.Id).OrderBy(x => x.Orden).Select(x => new PointRow(x.Id, x.PuntoControlId, x.PuntoNombre, x.Resultado, x.Observaciones)).ToListAsync();
+        var linked = await db.Incidencias.AsNoTracking()
+            .Where(x => x.RondinId == r.Id && x.PuntoControlId != null && x.Evidencias.Any())
+            .OrderByDescending(x => x.CreadoEn)
+            .Select(x => new { x.Id, x.PuntoControlId, x.Tipo, x.Descripcion }).ToListAsync();
+        var rows = await db.RegistrosPunto.AsNoTracking().Where(x => x.RondinId == r.Id).OrderBy(x => x.Orden).Select(x => new PointRow(x.Id, x.PuntoControlId, x.PuntoNombre, x.Resultado, x.Observaciones)).ToListAsync();
+        points.ItemsSource = rows.Select(p => p with
+        {
+            IncidenciasConEvidencia = linked.Where(i => i.PuntoControlId == p.PuntoId)
+                .Select(i => new PointIncident(i.Id, i.Tipo + ": " + i.Descripcion)).ToList()
+        }).ToList();
         UpdateActions();
+    }
+    private void ConfigurePointEvidence()
+    {
+        var cell = new FrameworkElementFactory(typeof(DockPanel));
+        cell.SetValue(DockPanel.LastChildFillProperty, true);
+        var button = new FrameworkElementFactory(typeof(Button));
+        button.SetValue(ContentControl.ContentProperty, "Evidencia");
+        button.SetValue(FrameworkElement.StyleProperty, FindResource("EvidenceLink"));
+        button.SetValue(Control.FontSizeProperty, 12.0);
+        button.SetValue(Control.PaddingProperty, new Thickness(8, 3, 8, 3));
+        button.SetValue(FrameworkElement.MarginProperty, new Thickness(8, 2, 4, 2));
+        button.SetValue(DockPanel.DockProperty, Dock.Right);
+        button.SetValue(FrameworkElement.ToolTipProperty, "Ver evidencias de las incidencias de este punto.");
+        button.SetBinding(VisibilityProperty, new Binding(nameof(PointRow.TieneEvidencia)) { Converter = new BooleanToVisibilityConverter() });
+        button.SetValue(System.Windows.Automation.AutomationProperties.NameProperty, "Ver evidencias del punto");
+        button.AddHandler(Button.ClickEvent, new RoutedEventHandler(async (sender, e) =>
+        {
+            e.Handled = true;
+            if (((Button)sender).DataContext is PointRow point) await Run(() => PreviewPointEvidence(point));
+        }));
+        cell.AppendChild(button);
+        var notes = new FrameworkElementFactory(typeof(TextBlock));
+        notes.SetBinding(TextBlock.TextProperty, new Binding(nameof(PointRow.Observaciones)));
+        notes.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+        notes.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
+        cell.AppendChild(notes);
+        points.Columns[2] = new DataGridTemplateColumn
+        {
+            Header = "Observación", MinWidth = 220, Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+            CellTemplate = new DataTemplate { VisualTree = cell }
+        };
+    }
+    private async Task PreviewPointEvidence(PointRow point)
+    {
+        var linked = point.IncidenciasConEvidencia;
+        if (linked.Count == 0) throw new ReglaNegocioException("Este punto no tiene incidencias con evidencias adjuntas.");
+        var selected = linked[0];
+        if (linked.Count > 1)
+        {
+            var dialog = new Editor(this, "Evidencias del punto"); dialog.Label(point.Nombre);
+            var choice = dialog.Choice("Selecciona la incidencia", linked, nameof(PointIncident.Detalle));
+            if (!dialog.Accept()) return;
+            selected = (PointIncident)choice.SelectedItem;
+        }
+        var window = await EvidenceWindow.CreateAsync(store, selected.Id);
+        window.Owner = this; window.ShowDialog();
     }
     private async Task AddUser()
     {
@@ -314,7 +372,7 @@ public sealed class MainWindow : Window
     {
         UserRow u => $"{u.Nombre} {u.Correo} {u.Rol} {FriendlyValueConverter.Label(u.Activo)}",
         RouteRow r => $"{r.Nombre} {FriendlyValueConverter.Label(r.Activa)}",
-        RoundRow r => $"{r.Ruta} {r.Prefecto} {FriendlyValueConverter.Label(r.Estado)} {FriendlyValueConverter.Label(r.Programado)}",
+        RoundRow r => $"{r.Ruta} {r.Prefecto} {FriendlyValueConverter.Label(r.Estado)} {FriendlyValueConverter.Label(r.Programado)} {r.CerradoEl}",
         IncidentRow i => $"{i.Ruta} {i.Tipo} {i.Descripcion} {FriendlyValueConverter.Label(i.Prioridad)} {FriendlyValueConverter.Label(i.Estado)}",
         _ => row.ToString() ?? ""
     };

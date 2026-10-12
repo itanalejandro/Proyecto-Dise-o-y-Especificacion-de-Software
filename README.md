@@ -20,6 +20,10 @@ En el primer inicio crea tu cuenta administradora: nombre, correo y contraseña 
 8. Regresa al rondín y ciérralo cuando todos sus puntos estén registrados.
 9. Entra como administrador, revisa las incidencias y cambia su estado: Abierta → EnRevision → Resuelta → Cerrada. También se permite Abierta → Resuelta.
 
+### Consultar fecha y hora de cierre
+
+Las tablas **Rondines** (administrador) y **Mis rondines** (prefecto) muestran **Cerrado el** junto a **Estado**, con la fecha y hora local del cierre en formato `dd/MM/yyyy HH:mm`. Usa el dato guardado al cerrar el recorrido, también para rondines anteriores que ya lo tengan registrado. Si no hay fecha de cierre, muestra **—**; cancelar no equivale a cerrar. La columna permite ordenar cronológicamente y la búsqueda incluye la fecha de cierre mostrada.
+
 ### Reasignar o cancelar recorridos
 
 En **Rondines**, el administrador puede **Reasignar** un recorrido programado a otro prefecto activo, indicando un motivo. No se permite reasignar recorridos iniciados, cerrados o cancelados. La asignación anterior y el motivo quedan en la bitácora.
@@ -41,6 +45,8 @@ Pulsa **Elegir en reloj** para abrir un reloj interactivo con la fecha y la hora
 Elige explícitamente **a. m.** o **p. m.**. Para minutos exactos usa **−1 min**, **+1 min** o las flechas del teclado sobre el reloj; H selecciona horas y M minutos. **Usar esta hora** confirma; **Cancelar** conserva la hora anterior. También puedes escribir **HH:mm** en formato de 24 horas directamente en el formulario. Debajo se muestra la fecha y su equivalente con a. m./p. m.; una hora inválida impide guardar. El reloj cambia la hora, no el día: la fecha se selecciona en el calendario.
 
 ### Revisar evidencias dentro de Ftracker
+
+En **Mis rondines → Puntos del rondín seleccionado**, junto a la observación aparece el enlace **Evidencia** cuando existen incidencias con archivos adjuntos vinculadas a ese punto y a ese recorrido. Abre el mismo visor sin exportar; si hay varias incidencias con archivos, primero permite elegir cuál consultar. Los reportes generales sin punto se consultan desde **Incidencias**.
 
 En **Incidencias**, selecciona un reporte con archivos adjuntos y pulsa **Ver evidencia**. La ventana permite elegir entre sus archivos y visualizar imágenes JPG/PNG con zoom, **Ajustar** y **100 %**. Las imágenes grandes usan una vista previa de hasta 2400 píxeles por lado mayor para limitar el consumo de memoria; 100 % se refiere al tamaño de esa vista previa. El original no se modifica ni se exporta automáticamente.
 

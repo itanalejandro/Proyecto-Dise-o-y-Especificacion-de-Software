@@ -146,6 +146,7 @@ internal static class Program
             Check(await db.Incidencias.AnyAsync(x => x.RondinId == roundId && x.PuntoControlId == point.PuntoControlId && x.Descripcion == "Lámpara fundida desde croquis"), "Incidencia del croquis vinculada al punto correcto");
         }
         await CheckEvidenceViewer(store, roundId, previewDir);
+        await CheckPointEvidence(prefect, roundId, previewDir);
         SaveImage(running, Path.Combine(previewDir, "interfaz-croquis-prefecto.png")); running.Close();
         prefect.Close(); store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
         await store.AddUserAsync("Segundo prefecto", "segundo@example.com", "SegundoPrefecto123!", Roles.Prefecto);
@@ -189,7 +190,59 @@ internal static class Program
         Descendants<DataGrid>(management).Single().SelectedItem = managementVm.Incidents.Single();
         Check(Descendants<Button>(management).Single(x => (string?)x.Content == "Ver evidencia").IsEnabled, "Administrador puede abrir evidencias de rondín cancelado");
         management.Close();
+        await CheckClosingDate(store, routeId);
         Console.WriteLine("COMPROBACIONES WPF COMPLETADAS");
+    }
+    private static async Task CheckClosingDate(LocalStore store, Guid routeId)
+    {
+        var vm = new MainViewModel(store); await vm.RefreshAsync();
+        Check(vm.Rounds.All(x => x.CerradoEn is null && x.CerradoEl == "—"), "Programados y cancelados no muestran un cierre inventado");
+        Guid id; string prefectId;
+        await using (var db = store.Open())
+        {
+            prefectId = await db.Users.Where(x => x.Email == "prefecto@example.com").Select(x => x.Id).SingleAsync();
+            id = (await new RondinService(db, store.Session).CrearAsync(new(routeId, prefectId, DateTime.UtcNow, null), store.Session.UserId!)).Id;
+        }
+        store.Session.SignOut(); await store.LoginAsync("prefecto@example.com", "PrefectoLocal123!");
+        DateTime closing;
+        await using (var db = store.Open())
+        {
+            var service = new RondinService(db, store.Session);
+            await service.IniciarAsync(id, prefectId);
+            foreach (var point in await db.RegistrosPunto.Where(x => x.RondinId == id).ToListAsync())
+                await service.MarcarPuntoAsync(id, point.Id, new(RegistroResultado.Completado, null), prefectId);
+            await service.CerrarAsync(id, null, prefectId);
+            closing = (await db.Rondines.SingleAsync(x => x.Id == id)).CerradoEn!.Value;
+        }
+        await vm.RefreshAsync();
+        var row = vm.Rounds.Single(x => x.Id == id);
+        Check(row.CerradoEn == closing.ToLocalTime() && row.CerradoEl == closing.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), "Tabla muestra fecha y hora local del cierre guardado");
+    }
+    private static async Task CheckPointEvidence(MainWindow window, Guid roundId, string previewDir)
+    {
+        Descendants<Button>(window).Single(x => (string?)x.Content == "Actualizar datos").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await Until(() => Descendants<TabControl>(window).Single().IsEnabled);
+        var rounds = Descendants<DataGrid>(window).Single(x => x.ItemsSource is IReadOnlyList<RoundRow>);
+        rounds.SelectedItem = ((MainViewModel)window.DataContext).Rounds.Single(x => x.Id == roundId);
+        await Until(() => Descendants<DataGrid>(window).Any(x => x.Items.Count == 2 && x.Items[0] is PointRow { TieneEvidencia: true }));
+        window.UpdateLayout();
+        var points = Descendants<DataGrid>(window).Single(x => x.Items.Count > 0 && x.Items[0] is PointRow);
+        var linked = points.Items.Cast<PointRow>().Single(x => x.TieneEvidencia);
+        Check(linked.IncidenciasConEvidencia.Count == 1, "Evidencia vinculada al punto y rondín correctos");
+        Check(points.Items.Cast<PointRow>().Count(x => !x.TieneEvidencia) == 1, "Puntos sin adjuntos no anuncian evidencias");
+        var buttons = Descendants<Button>(window).Where(x => AutomationProperties.GetName(x) == "Ver evidencias del punto").ToList();
+        var button = buttons.Single(x => x.Visibility == Visibility.Visible);
+        Check(Equals(button.DataContext, linked) && buttons.Any(x => x.Visibility == Visibility.Collapsed), "Botón de imagen visible solo en la fila con evidencias");
+        // Opening a row must not depend on the currently selected point.
+        points.SelectedItem = points.Items.Cast<PointRow>().Single(x => !x.TieneEvidencia);
+        _ = Dispatcher.CurrentDispatcher.BeginInvoke(new Action(() => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent))));
+        await Until(() => System.Windows.Application.Current.Windows.OfType<EvidenceWindow>().Any());
+        var viewer = System.Windows.Application.Current.Windows.OfType<EvidenceWindow>().Single();
+        viewer.UpdateLayout();
+        Check(Descendants<ComboBox>(viewer).Single().Items.Count == 5, "Botón del punto abre su visor sin exportar y sin depender de la selección");
+        viewer.Close();
+        await Until(() => Descendants<TabControl>(window).Single().IsEnabled);
+        SaveImage(window, Path.Combine(previewDir, "interfaz-evidencias-punto.png"));
     }
     private static async Task CheckEvidenceViewer(LocalStore store, Guid roundId, string previewDir)
     {

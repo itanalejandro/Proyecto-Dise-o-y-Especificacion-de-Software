@@ -6,6 +6,25 @@
     </Style>
     <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="White"/><Setter Property="Foreground" Value="#245F9D"/><Setter Property="BorderBrush" Value="#C8D6E5"/></Style>
     <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="White"/><Setter Property="Foreground" Value="#B3261E"/><Setter Property="BorderBrush" Value="#E7B4B0"/></Style>
+    <Style x:Key="EvidenceLink" TargetType="Button">
+      <Setter Property="Foreground" Value="#245F9D"/><Setter Property="Background" Value="Transparent"/><Setter Property="Cursor" Value="Hand"/><Setter Property="MinHeight" Value="0"/><Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Border Background="Transparent" Padding="{TemplateBinding Padding}"><TextBlock x:Name="Label" Text="{TemplateBinding Content}" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center"/></Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Label" Property="TextDecorations" Value="Underline"/></Trigger>
+          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Label" Property="TextDecorations" Value="Underline"/></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Label" Property="Opacity" Value="0.4"/></Trigger>
+          <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=DataGridRow}}" Value="True"><Setter Property="Foreground" Value="#245F9D"/></DataTrigger>
+          <MultiDataTrigger>
+            <MultiDataTrigger.Conditions>
+              <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=DataGridRow}}" Value="True"/>
+              <Condition Binding="{Binding Path=(Selector.IsSelectionActive), RelativeSource={RelativeSource AncestorType=DataGridRow}}" Value="True"/>
+            </MultiDataTrigger.Conditions>
+            <Setter Property="Foreground" Value="White"/>
+          </MultiDataTrigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
     <Style TargetType="TextBox"><Setter Property="Padding" Value="10,9"/><Setter Property="Margin" Value="0,5,0,14"/><Setter Property="BorderBrush" Value="#C8D6E5"/><Setter Property="VerticalContentAlignment" Value="Center"/><Style.Triggers><Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="BorderBrush" Value="#245F9D"/></Trigger></Style.Triggers></Style>
     <Style TargetType="PasswordBox"><Setter Property="Padding" Value="10,9"/><Setter Property="Margin" Value="0,5,0,14"/><Setter Property="BorderBrush" Value="#C8D6E5"/></Style>
     <Style TargetType="ComboBox"><Setter Property="Padding" Value="9"/><Setter Property="Margin" Value="0,5,0,14"/><Setter Property="MinHeight" Value="38"/></Style>
