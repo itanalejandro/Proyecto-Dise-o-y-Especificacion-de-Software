@@ -21,6 +21,7 @@ internal static class Program
         var result = 1;
         var app = new System.Windows.Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/Ftracker;component/Theme.xaml", UriKind.Relative) });
+        ThemeManager.Apply(false);
         var timeout = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
         timeout.Tick += (_, _) => { result = 1; timeout.Stop(); Console.WriteLine("Error: tiempo de comprobación WPF agotado."); app.Shutdown(1); Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background); };
         timeout.Start();
@@ -42,7 +43,29 @@ internal static class Program
         var window = new MainWindow(store) { ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500, Top = 0 };
         window.Show(); await Task.Delay(250); window.UpdateLayout();
         var tabs = Descendants<TabControl>(window).Single();
+        var themeBrush = window.Background;
+        var themeToggle = ThemeManager.ToggleButton(persist: false);
+        var oldThemeToggle = Descendants<Button>(window).Single(x => AutomationProperties.GetName(x) == "Cambiar a modo oscuro");
+        var themeActions = (Panel)oldThemeToggle.Parent;
+        var themeIndex = themeActions.Children.IndexOf(oldThemeToggle);
+        themeActions.Children.RemoveAt(themeIndex);
+        themeActions.Children.Insert(themeIndex, themeToggle);
+        themeToggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); window.UpdateLayout();
+        await Task.Delay(240);
+        var thumb = (Border)themeToggle.Template.FindName("Thumb", themeToggle);
+        Check((string)themeToggle.Content == "Oscuro" && Math.Abs(((TranslateTransform)thumb.RenderTransform).X - 22) < .1, "Interruptor oscuro muestra etiqueta y desliza la perilla");
+        Check(ReferenceEquals(themeBrush, window.Background) && ((SolidColorBrush)window.Background).Color == Color.FromRgb(21, 28, 37), "Modo oscuro actualiza ventana abierta sin recrear datos");
+        var themeArtifacts = Path.Combine(Environment.CurrentDirectory, "artifacts"); Directory.CreateDirectory(themeArtifacts);
+        SaveImage(window, Path.Combine(themeArtifacts, "interfaz-modo-oscuro.png"));
+        Check(AutomationProperties.GetName(themeToggle) == "Cambiar a modo claro", "Control de tema anuncia la siguiente acción");
+        themeToggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); window.UpdateLayout();
+        await Task.Delay(240);
+        Check((string)themeToggle.Content == "Claro" && Math.Abs(((TranslateTransform)thumb.RenderTransform).X) < .1, "Interruptor claro devuelve la perilla a su posición");
+        SaveImage(window, Path.Combine(themeArtifacts, "interfaz-modo-claro.png"));
+        Check(((SolidColorBrush)window.Background).Color == Color.FromRgb(243, 246, 250), "Modo claro se restaura en la misma ventana");
         Check(tabs.Items.Count == 5, "Navegación de administrador");
+        Check(tabs.Items.Cast<TabItem>().Select(x => (string)x.Header).SequenceEqual(new[] { "Usuarios", "Rutas y puntos", "Rondines", "Incidencias", "Bitácora" }), "Orden de navegación de administrador");
+        tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Rondines"); window.UpdateLayout();
         Check(!Descendants<System.Windows.Controls.Primitives.UniformGrid>(window).Any(), "Encabezado sin tarjetas de resumen");
         Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Reasignar").IsEnabled, "No reasigna sin seleccionar rondín");
         Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Cancelar rondín").IsEnabled, "No cancela sin seleccionar rondín");
@@ -158,6 +181,8 @@ internal static class Program
         }
         var management = new MainWindow(store) { ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500 };
         management.Show(); await Until(() => ((MainViewModel)management.DataContext).Rounds.Count == 2); management.UpdateLayout();
+        var roundTabs = Descendants<TabControl>(management).Single();
+        roundTabs.SelectedItem = roundTabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Rondines"); management.UpdateLayout();
         var managementVm = (MainViewModel)management.DataContext;
         var managementTable = Descendants<DataGrid>(management).Single(); managementTable.SelectedItem = managementVm.Rounds.Single(x => x.Id == roundId);
         var cancel = Descendants<Button>(management).Single(x => (string?)x.Content == "Cancelar rondín");
@@ -304,6 +329,9 @@ internal static class Program
         var clock = new ClockTimeWindow(new TimeOnly(15, 35), new DateTime(2026, 10, 11))
         { Owner = owner, ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500, Top = 0 };
         clock.Show(); clock.UpdateLayout();
+        ThemeManager.Apply(true); clock.UpdateLayout();
+        SaveImage(clock, Path.Combine(previewDir, "interfaz-reloj-oscuro.png"));
+        ThemeManager.Apply(false);
         var dial = Descendants<ClockDial>(clock).Single();
         Check(clock.Value == new TimeOnly(15, 35), "Reloj conserva hora inicial y periodo p. m.");
         var center = new Point(dial.ActualWidth / 2, dial.ActualHeight / 2);

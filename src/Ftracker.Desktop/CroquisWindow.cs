@@ -66,7 +66,7 @@ internal sealed class CroquisWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(zoom, "Zoom del croquis");
         var footer = new StackPanel(); DockPanel.SetDock(footer, Dock.Bottom); root.Children.Add(footer);
         footer.Children.Add(status);
-        footer.Children.Add(new TextBlock { Text = "Croquis orientativo, sin GPS. Las líneas indican el orden de los puntos, no caminos reales.", FontSize = 12, Foreground = Brushes.SlateGray, Margin = new Thickness(0, 6, 0, 0) });
+        footer.Children.Add(new TextBlock { Text = "Croquis orientativo, sin GPS. Las líneas indican el orden de los puntos, no caminos reales.", FontSize = 12, Foreground = ThemeManager.Get("Muted"), Margin = new Thickness(0, 6, 0, 0) });
         var sidebar = new DockPanel { Width = 290, Margin = new Thickness(16, 10, 0, 0) }; DockPanel.SetDock(sidebar, Dock.Right); root.Children.Add(sidebar);
         var actions = new StackPanel(); DockPanel.SetDock(actions, Dock.Bottom); sidebar.Children.Add(actions);
         actions.Children.Add(new ScrollViewer { Content = detail, MaxHeight = 150, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
@@ -152,7 +152,7 @@ internal sealed class CroquisWindow : Window
             var a = points[i - 1]; var b = points[i];
             if (a.X is not double ax || a.Y is not double ay || b.X is not double bx || b.Y is not double by) continue;
             overlay.Children.Add(new Line { X1 = ax * map.Width, Y1 = ay * map.Height, X2 = bx * map.Width, Y2 = by * map.Height,
-                Stroke = Brushes.SlateGray, StrokeThickness = 2, StrokeDashArray = new DoubleCollection { 4, 3 }, IsHitTestVisible = false });
+                Stroke = ThemeManager.Get("Muted"), StrokeThickness = 2, StrokeDashArray = new DoubleCollection { 4, 3 }, IsHitTestVisible = false });
         }
         foreach (var p in points.Where(x => x.X.HasValue && x.Y.HasValue))
         {
@@ -218,11 +218,11 @@ internal sealed class CroquisWindow : Window
     private async Task Run(Func<Task> action)
     {
         if (busy) return;
-        busy = true; UpdateActions(); status.Foreground = Brushes.SlateGray; status.Text = "Procesando…";
+        busy = true; UpdateActions(); status.Foreground = ThemeManager.Get("Muted"); status.Text = "Procesando…";
         try { await action(); }
-        catch (DbUpdateConcurrencyException) { status.Foreground = Brushes.Firebrick; status.Text = "La ruta cambió en otra ventana. Cierra y vuelve a abrir el croquis antes de guardar."; }
-        catch (ReglaNegocioException ex) { status.Foreground = Brushes.Firebrick; status.Text = ex.Message; }
-        catch (Exception) { status.Foreground = Brushes.Firebrick; status.Text = "No se pudo completar la operación. Tus ubicaciones sin guardar se conservan."; }
+        catch (DbUpdateConcurrencyException) { status.Foreground = ThemeManager.Get("Danger"); status.Text = "La ruta cambió en otra ventana. Cierra y vuelve a abrir el croquis antes de guardar."; }
+        catch (ReglaNegocioException ex) { status.Foreground = ThemeManager.Get("Danger"); status.Text = ex.Message; }
+        catch (Exception) { status.Foreground = ThemeManager.Get("Danger"); status.Text = "No se pudo completar la operación. Tus ubicaciones sin guardar se conservan."; }
         finally { busy = false; UpdateActions(); }
     }
 }

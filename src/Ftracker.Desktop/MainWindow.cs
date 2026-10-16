@@ -29,21 +29,23 @@ public sealed class MainWindow : Window
         Style = (Style)FindResource(typeof(Window));
         Title = "Ftracker"; Width = 1180; Height = 800; MinWidth = 900; MinHeight = 650; WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Icon = Brand.Icon;
-        Background = new SolidColorBrush(Color.FromRgb(245, 248, 251));
+        Background = ThemeManager.Get("Page");
         var root = new DockPanel { Margin = new Thickness(24) }; Content = root;
         var header = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 18) };
         DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
         var actions = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+        actions.Children.Add(ThemeManager.ToggleButton());
         var update = ActionButton("Actualizar datos", Refresh); update.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(update);
         var logout = ActionButton("Cerrar sesión", Logout); logout.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(logout);
         DockPanel.SetDock(actions, Dock.Right); header.Children.Add(actions);
         var identity = new StackPanel(); identity.Children.Add(Brand.Header(26));
-        identity.Children.Add(new TextBlock { Text = $"{store.Session.User!.NombreCompleto} · {store.Session.Role}", FontSize = 12, Foreground = Brushes.SlateGray, Margin = new Thickness(0, 4, 0, 0) });
+        identity.Children.Add(new TextBlock { Text = $"{store.Session.User!.NombreCompleto} · {store.Session.Role}", FontSize = 12, Foreground = ThemeManager.Get("Muted"), Margin = new Thickness(0, 4, 0, 0) });
         header.Children.Add(identity);
-        status.Foreground = Brushes.SlateGray; status.FontSize = 12;
+        status.Foreground = ThemeManager.Get("Muted"); status.FontSize = 12;
         DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status); root.Children.Add(tabs);
+        if (vm.IsAdmin) { BuildUsers(); BuildRoutes(); }
         BuildRounds(); BuildIncidents();
-        if (vm.IsAdmin) { BuildUsers(); BuildRoutes(); BuildAudit(); }
+        if (vm.IsAdmin) BuildAudit();
         foreach (var grid in new[] { users, routes, rounds, points, incidents }) grid.SelectionChanged += (_, _) => UpdateActions();
         UpdateActions();
         Loaded += async (_, _) => await Run(Refresh);
@@ -81,7 +83,7 @@ public sealed class MainWindow : Window
         else { bar.Children.Add(ActionButton("Reportar incidencia", Report, () => rounds.SelectedItem is RoundRow { Estado: RondinEstado.EnCurso })); bar.Children.Add(ActionButton("Adjuntar evidencia", Attach, () => incidents.SelectedItem is IncidentRow { Archivos: < 5 } i && vm.Rounds.Any(r => r.Id == i.RondinId && r.Estado == RondinEstado.EnCurso))); }
         bar.Children.Add(ActionButton("Ver evidencia", PreviewEvidence, () => incidents.SelectedItem is IncidentRow { Archivos: > 0 }));
         bar.Children.Add(ActionButton("Exportar evidencia", ShowEvidence, () => incidents.SelectedItem is IncidentRow { Archivos: > 0 })); panel.Children.Add(bar);
-        if (!vm.IsAdmin) { var context = new TextBlock { Margin = new Thickness(0, 8, 0, 8), TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray }; context.SetBinding(TextBlock.TextProperty, new Binding("SelectedItem.Ruta") { Source = rounds, StringFormat = "Rondín seleccionado: {0}", TargetNullValue = "Primero selecciona un recorrido en Mis rondines." }); panel.Children.Add(context); }
+        if (!vm.IsAdmin) { var context = new TextBlock { Margin = new Thickness(0, 8, 0, 8), TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Get("Muted") }; context.SetBinding(TextBlock.TextProperty, new Binding("SelectedItem.Ruta") { Source = rounds, StringFormat = "Rondín seleccionado: {0}", TargetNullValue = "Primero selecciona un recorrido en Mis rondines." }); panel.Children.Add(context); }
         AddSearch(panel, incidents, "Buscar por ruta, tipo, descripción o estado");
         incidents.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Incidents))); incidents.Height = 350; AddTable(panel, incidents, "No hay incidencias para mostrar. Los reportes aparecerán aquí.");
     }
@@ -348,7 +350,7 @@ public sealed class MainWindow : Window
     {
         var p = new StackPanel { Margin = new Thickness(16) };
         p.Children.Add(new TextBlock { Text = title, FontSize = 23, FontWeight = FontWeights.SemiBold });
-        if (description.Length > 0) p.Children.Add(new TextBlock { Text = description, TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray, Margin = new Thickness(0, 6, 0, 18) });
+        if (description.Length > 0) p.Children.Add(new TextBlock { Text = description, TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Get("Muted"), Margin = new Thickness(0, 6, 0, 18) });
         tabs.Items.Add(new TabItem { Header = title, Content = new ScrollViewer { Content = p, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } }); return p;
     }
     private void AddSearch(StackPanel panel, DataGrid grid, string hint)
@@ -359,7 +361,7 @@ public sealed class MainWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(search, hint);
         search.TextChanged += (_, _) => { Filter(grid, search.Text); UpdateActions(); };
         clear.Click += (_, _) => { search.Clear(); search.Focus(); };
-        bar.Children.Add(search); panel.Children.Add(new TextBlock { Text = hint, Foreground = Brushes.SlateGray, FontSize = 12 }); panel.Children.Add(bar); searches.Add((grid, search));
+        bar.Children.Add(search); panel.Children.Add(new TextBlock { Text = hint, Foreground = ThemeManager.Get("Muted"), FontSize = 12 }); panel.Children.Add(bar); searches.Add((grid, search));
     }
     private static void Filter(DataGrid grid, string text)
     {
@@ -379,7 +381,7 @@ public sealed class MainWindow : Window
     private static void AddTable(StackPanel panel, DataGrid table, string message)
     {
         var container = new Grid(); container.Children.Add(table);
-        var placeholder = new TextBlock { Text = message + "\nSi estás buscando, prueba con otro texto o pulsa Limpiar.", TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = 440, Margin = new Thickness(24), Foreground = Brushes.SlateGray, IsHitTestVisible = false };
+        var placeholder = new TextBlock { Text = message + "\nSi estás buscando, prueba con otro texto o pulsa Limpiar.", TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = 440, Margin = new Thickness(24), Foreground = ThemeManager.Get("Muted"), IsHitTestVisible = false };
         placeholder.SetBinding(VisibilityProperty, new Binding("Items.Count") { Source = table, Converter = new EmptyVisibilityConverter() });
         container.Children.Add(placeholder); panel.Children.Add(container);
     }
@@ -398,7 +400,7 @@ internal sealed class Editor : Window
     public Editor(Window owner, string title)
     {
         Owner = owner; Title = title; Style = (Style)FindResource(typeof(Window)); Width = 560; SizeToContent = SizeToContent.Height; MaxHeight = Math.Min(780, SystemParameters.WorkArea.Height - 30); WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Content = new ScrollViewer { Content = new Border { Background = Brushes.White, Margin = new Thickness(12), CornerRadius = new CornerRadius(10), Child = panel }, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        Content = new ScrollViewer { Content = new Border { Background = ThemeManager.Get("Surface"), Margin = new Thickness(12), CornerRadius = new CornerRadius(10), Child = panel }, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         panel.Children.Add(new TextBlock { Text = title, FontSize = 23, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 20) });
         Loaded += (_, _) => fields.FirstOrDefault()?.Focus();
         Closing += (_, e) => { if (saving) e.Cancel = true; };
@@ -424,7 +426,7 @@ internal sealed class Editor : Window
     public bool Accept() => Save(() => Task.CompletedTask, "Continuar");
     public bool Save(Func<Task> save, string label = "Guardar")
     {
-        var error = new TextBlock { Foreground = Brushes.Firebrick, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 10) }; panel.Children.Add(error);
+        var error = new TextBlock { Foreground = ThemeManager.Get("Danger"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 10) }; panel.Children.Add(error);
         var buttons = new WrapPanel(); var ok = new Button { Content = label }; var cancel = new Button { Content = "Cancelar", IsCancel = true, Style = (Style)FindResource("SecondaryButton") };
         ok.Click += async (_, _) =>
         {

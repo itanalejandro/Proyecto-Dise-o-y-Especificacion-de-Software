@@ -52,7 +52,7 @@ internal sealed class EvidenceWindow : Window
         close.Click += (_, _) => Close(); tools.Children.Add(close);
         System.Windows.Automation.AutomationProperties.SetName(zoom, "Zoom de evidencia");
         DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status);
-        var preview = new Grid { Background = Brushes.White };
+        var preview = new Grid { Background = ThemeManager.Get("Surface") };
         viewport.Content = image; preview.Children.Add(viewport); preview.Children.Add(message);
         root.Children.Add(new Border { Child = preview, BorderThickness = new Thickness(1), BorderBrush = Brushes.LightSlateGray, CornerRadius = new CornerRadius(6) });
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);

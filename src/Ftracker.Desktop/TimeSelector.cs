@@ -11,7 +11,7 @@ namespace Ftracker.Desktop;
 internal sealed class TimeSelector : UserControl
 {
     private readonly TextBox input;
-    private readonly TextBlock hint = new() { Foreground = Brushes.SlateGray, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock hint = new() { Foreground = ThemeManager.Get("Muted"), TextWrapping = TextWrapping.Wrap };
     private TimeOnly lastValid;
     private DateTime? selectedDate;
     public DateTime? SelectedDate { get => selectedDate; set { selectedDate = value; RefreshHint(); } }
@@ -41,8 +41,8 @@ internal sealed class TimeSelector : UserControl
     private bool TryRead(out TimeOnly time) => TimeOnly.TryParseExact(input.Text.Trim(), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out time);
     private void RefreshHint()
     {
-        if (!TryRead(out var time)) { hint.Text = "Hora no válida. Usa HH:mm (00:00 a 23:59) o abre el reloj."; hint.Foreground = Brushes.Firebrick; return; }
-        lastValid = time; hint.Foreground = Brushes.SlateGray;
+        if (!TryRead(out var time)) { hint.Text = "Hora no válida. Usa HH:mm (00:00 a 23:59) o abre el reloj."; hint.Foreground = ThemeManager.Get("Danger"); return; }
+        lastValid = time; hint.Foreground = ThemeManager.Get("Muted");
         hint.Text = ClockTimeWindow.FormatSelection(SelectedDate, time);
     }
 }
@@ -56,8 +56,8 @@ internal sealed class ClockTimeWindow : Window
     private readonly Button minutes;
     private readonly Button am;
     private readonly Button pm;
-    private readonly TextBlock preview = new() { FontSize = 30, FontWeight = FontWeights.SemiBold, Foreground = Brushes.MidnightBlue, Margin = new Thickness(0, 10, 0, 5) };
-    private readonly TextBlock instruction = new() { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.SlateGray, Margin = new Thickness(0, 6, 0, 12) };
+    private readonly TextBlock preview = new() { FontSize = 30, FontWeight = FontWeights.SemiBold, Foreground = ThemeManager.Get("Link"), Margin = new Thickness(0, 10, 0, 5) };
+    private readonly TextBlock instruction = new() { TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Get("Muted"), Margin = new Thickness(0, 6, 0, 12) };
     public TimeOnly Value => dial.Value;
 
     public ClockTimeWindow(TimeOnly initial, DateTime? date)
@@ -85,7 +85,7 @@ internal sealed class ClockTimeWindow : Window
         var parts = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) }; hours = Tool("Horas", () => dial.Part = ClockPart.Hours); minutes = Tool("Minutos", () => dial.Part = ClockPart.Minutes);
         parts.Children.Add(hours); parts.Children.Add(minutes); side.Children.Add(parts); side.Children.Add(instruction);
         var precise = new WrapPanel(); precise.Children.Add(Tool("−1 min", () => dial.SetValue(Value.AddMinutes(-1)))); precise.Children.Add(Tool("+1 min", () => dial.SetValue(Value.AddMinutes(1)))); side.Children.Add(precise);
-        side.Children.Add(new TextBlock { Text = "También puedes usar las flechas del teclado sobre el reloj.", Foreground = Brushes.SlateGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+        side.Children.Add(new TextBlock { Text = "También puedes usar las flechas del teclado sobre el reloj.", Foreground = ThemeManager.Get("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
         dial.ValueChanged += Refresh; dial.PartChanged += Refresh; Loaded += (_, _) => dial.Focus(); Refresh();
     }
 
@@ -99,9 +99,9 @@ internal sealed class ClockTimeWindow : Window
     private void Refresh()
     {
         preview.Text = FormatTime(Value);
-        hours.Background = dial.Part == ClockPart.Hours ? Brushes.LightSteelBlue : Brushes.White;
-        minutes.Background = dial.Part == ClockPart.Minutes ? Brushes.LightSteelBlue : Brushes.White;
-        am.Background = Value.Hour < 12 ? Brushes.LightSteelBlue : Brushes.White; pm.Background = Value.Hour >= 12 ? Brushes.LightSteelBlue : Brushes.White;
+        hours.Background = dial.Part == ClockPart.Hours ? ThemeManager.Get("Selected") : ThemeManager.Get("Surface");
+        minutes.Background = dial.Part == ClockPart.Minutes ? ThemeManager.Get("Selected") : ThemeManager.Get("Surface");
+        am.Background = Value.Hour < 12 ? ThemeManager.Get("Selected") : ThemeManager.Get("Surface"); pm.Background = Value.Hour >= 12 ? ThemeManager.Get("Selected") : ThemeManager.Get("Surface");
         instruction.Text = dial.Part == ClockPart.Hours ? "Elige la hora o arrastra su manecilla. Después selecciona los minutos." : "Elige los minutos de 5 en 5 o arrastra su manecilla. Usa ±1 min para afinar.";
         AutomationProperties.SetHelpText(dial, instruction.Text + " Hora seleccionada: " + preview.Text);
     }
@@ -129,16 +129,16 @@ internal sealed class ClockDial : FrameworkElement
     protected override void OnRender(DrawingContext dc)
     {
         base.OnRender(dc); var r = Radius; if (r <= 0) return;
-        dc.DrawEllipse(Brushes.White, new Pen(IsKeyboardFocused ? Accent : Brushes.LightSlateGray, IsKeyboardFocused ? 3 : 1), Center, r, r);
+        dc.DrawEllipse(ThemeManager.Get("Surface"), new Pen(IsKeyboardFocused ? Accent : Brushes.LightSlateGray, IsKeyboardFocused ? 3 : 1), Center, r, r);
         for (var tick = 0; tick < 60; tick++)
-            dc.DrawLine(new Pen(tick % 5 == 0 ? Brushes.SlateGray : Brushes.LightGray, tick % 5 == 0 ? 2 : 1), Position(tick / 60d, r - 8), Position(tick / 60d, r - (tick % 5 == 0 ? 17 : 12)));
+            dc.DrawLine(new Pen(tick % 5 == 0 ? ThemeManager.Get("Muted") : Brushes.LightGray, tick % 5 == 0 ? 2 : 1), Position(tick / 60d, r - 8), Position(tick / 60d, r - (tick % 5 == 0 ? 17 : 12)));
         var selected = Part == ClockPart.Hours ? Value.Hour % 12 : Value.Minute / 5d;
         for (var n = 0; n < 12; n++)
         {
             var pos = Position(n / 12d, r - 34); var active = Math.Abs(n - selected) < .01;
             if (active) dc.DrawEllipse(Accent, null, pos, 18, 18);
             var label = Part == ClockPart.Hours ? (n == 0 ? 12 : n).ToString() : (n * 5).ToString("00");
-            var text = new FormattedText(label, CultureInfo.GetCultureInfo("es-MX"), FlowDirection.LeftToRight, new Typeface("Segoe UI"), 17, active ? Brushes.White : Brushes.DarkSlateGray, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            var text = new FormattedText(label, CultureInfo.GetCultureInfo("es-MX"), FlowDirection.LeftToRight, new Typeface("Segoe UI"), 17, active ? Brushes.White : ThemeManager.Get("Text"), VisualTreeHelper.GetDpi(this).PixelsPerDip);
             dc.DrawText(text, new Point(pos.X - text.Width / 2, pos.Y - text.Height / 2));
         }
         DrawHand(dc, (Value.Hour % 12 + Value.Minute / 60d) / 12, r * .49, Part == ClockPart.Hours);

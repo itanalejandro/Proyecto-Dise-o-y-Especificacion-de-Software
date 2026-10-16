@@ -7,6 +7,7 @@ public partial class App : System.Windows.Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        ThemeManager.Initialize();
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         try
         {

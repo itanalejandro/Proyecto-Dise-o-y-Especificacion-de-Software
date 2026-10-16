@@ -24,7 +24,7 @@ internal static class Brand
         panel.Children.Add(new TextBlock
         {
             Text = "Ftracker", FontSize = fontSize, FontWeight = FontWeights.Bold,
-            Foreground = new SolidColorBrush(Color.FromRgb(18, 54, 90)),
+            Foreground = ThemeManager.Get("Text"),
             VerticalAlignment = VerticalAlignment.Center
         });
         return panel;

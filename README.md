@@ -88,6 +88,10 @@ Para coordinar cambios, trabajar en una rama por tarea y revisar los cambios ant
 
 ## Comodidad de uso
 
+### Modo claro y oscuro
+
+El interruptor redondeado **Claro / Oscuro** del encabezado alterna el tema sin cerrar la sesión ni perder datos. Incluye símbolos de sol/luna y una transición suave de recorrido corto. La preferencia se guarda por cuenta de Windows en `%LOCALAPPDATA%\Ftracker\tema.txt` y se recupera al iniciar. Cambian los colores de las ventanas, tablas y formularios; el croquis y las imágenes de evidencia conservan sus colores originales. El botón también se puede utilizar con Tab y Enter o Espacio.
+
 ### Croquis interactivo
 
 1. Como administrador, selecciona una ruta en **Rutas y puntos** y pulsa **Ubicar en croquis**.
@@ -100,6 +104,8 @@ El zoom, las barras de desplazamiento y **Ajustar** permiten explorar el área. 
 El croquis se incluye en la aplicación y funciona sin internet. Al iniciar se añade de forma automática e idempotente la tabla de ubicaciones, sin borrar datos existentes. Conviene respaldar antes de actualizar. Véase `src/Ftracker.Desktop/Assets/CROQUIS.md` para detalles y limitaciones.
 
 ### Navegación y formularios
+
+Para el administrador, el orden lateral es **Usuarios → Rutas y puntos → Rondines → Incidencias → Bitácora**. El prefecto conserva **Mis rondines → Incidencias**. Las opciones laterales y el panel principal tienen bordes redondeados.
 
 La navegación lateral agrupa rondines, incidencias y catálogos. El encabezado compacto muestra el logo, el usuario y las acciones de sesión, sin tarjetas de resumen. Las tablas tienen búsqueda por texto (sin distinguir mayúsculas ni acentos), selección de fila completa y mensajes cuando están vacías. Las acciones se habilitan según la selección y el estado del registro. La fecha de asignación se elige con calendario y la hora mediante el reloj interactivo o escritura en formato de 24 horas.
 
