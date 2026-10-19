@@ -101,6 +101,7 @@ await using (var db = store.Open()) { var svc = new IncidenciaService(db, store.
 Check((await store.GetEvidenceAsync(incidentId)).Count == 1 && (await store.ReadEvidenceAsync(attachments[0].Id)).Length > 0, "Administrador consulta evidencia de rondín cerrado");
 await CheckRoundManagement(store, routeId, roundId, evidencePath);
 await CheckDeletion(store, evidencePath);
+await CheckNewFeatures(store, directory);
 await using (var db = store.Open()) { Check(await db.Rondines.AnyAsync(x => x.Id == roundId && x.Estado == RondinEstado.Cerrado), "Rondín cerrado persistido"); Check(await db.Auditorias.CountAsync() >= 8, "Auditoría persistida"); var prefect = await db.Users.SingleAsync(x => x.Email == "prefecto@example.com"); await store.ToggleUserAsync(prefect.Id); }
 await Reject(() => store.LoginAsync("prefecto@example.com", "PrefectoLocal123!"), "Usuario desactivado bloqueado");
 Console.WriteLine("PRUEBAS COMPLETADAS. Base aislada: " + directory);
@@ -244,4 +245,108 @@ static async Task CheckDeletion(LocalStore store, string evidencePath)
     await using (var db = store.Open()) { Check(!await db.Users.AnyAsync(x => x.Id == userId) && await db.Auditorias.AnyAsync(x => x.EntidadId == userId && x.Accion == "EliminarUsuario"), "Eliminar usuario persiste y audita"); }
     await Reject(() => store.LoginAsync("borrable@example.com", "Borrable12345!"), "Usuario eliminado no puede iniciar sesión");
     await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+}
+
+static async Task CheckNewFeatures(LocalStore store, string directory)
+{
+    // Se espera sesión de administrador; "otro@example.com" es un prefecto activo creado antes.
+    await store.AddRouteAsync("Ruta con códigos", "Prueba de puntos y códigos", "A\nB\nC");
+    Guid routeId;
+    await using (var db = store.Open()) routeId = (await db.Rutas.SingleAsync(x => x.Nombre == "Ruta con códigos")).Id;
+    var points = await store.GetRoutePointsAsync(routeId);
+    await store.RenamePointAsync(points[1].Id, "B2");
+    await store.MovePointAsync(points[2].Id, -1);
+    await store.MovePointAsync(points[0].Id, -1); // ya es el primero: no cambia nada
+    Check((await store.GetRoutePointsAsync(routeId)).Select(x => x.Nombre + x.Orden).SequenceEqual(new[] { "A1", "C2", "B23" }), "Renombrar y reordenar puntos");
+    await Reject(() => store.RenamePointAsync(points[0].Id, "   "), "Nombre de punto vacío bloqueado");
+    await Reject(() => store.RenamePointAsync(points[0].Id, new string('x', 121)), "Nombre de punto demasiado largo bloqueado");
+
+    // Verificación por código
+    await store.SetRouteCodesAsync(routeId, true);
+    await store.AddPointAsync(routeId, "D");
+    points = await store.GetRoutePointsAsync(routeId);
+    Check(points.Count == 4 && points.All(x => x.ConCodigo) && points[3].Nombre == "D", "Activar códigos cubre todos los puntos, incluso los nuevos");
+    var codeSheet = Path.Combine(directory, "codigos.html");
+    Check(await store.WriteCodeSheetAsync(routeId, codeSheet) == 4 && File.ReadAllText(codeSheet).Contains("data:image/png;base64,"), "Hoja de códigos con QR");
+    Guid roundId;
+    await using (var db = store.Open())
+    {
+        var prefect = await db.Users.SingleAsync(x => x.Email == "otro@example.com");
+        roundId = (await new RondinService(db, store.Session).CrearAsync(new(routeId, prefect.Id, DateTime.UtcNow, null), store.Session.UserId!)).Id;
+    }
+    store.Session.SignOut(); await store.LoginAsync("otro@example.com", "OtroPrefecto123!");
+    List<RegistroPunto> records;
+    await using (var db = store.Open()) records = (await new RondinService(db, store.Session).IniciarAsync(roundId, store.Session.UserId!)).Registros.OrderBy(x => x.Orden).ToList();
+    Check(await store.RequiresCodeAsync(records[0].Id), "El prefecto sabe que el punto exige código, sin ver el código");
+    async Task Mark(int index, RegistroResultado result, string? note, string? code)
+    {
+        await using var db = store.Open();
+        await new RondinService(db, store.Session).MarcarPuntoAsync(roundId, records[index].Id, new(result, note, code), store.Session.UserId!);
+    }
+    await Reject(() => Mark(0, RegistroResultado.Completado, null, null), "Completar sin código bloqueado");
+    await Reject(() => Mark(0, RegistroResultado.Completado, null, "ZZZZ-ZZZZ"), "Código incorrecto bloqueado");
+    await using (var db = store.Open()) Check(await db.Auditorias.AnyAsync(x => x.Accion == "CodigoPuntoIncorrecto" && x.EntidadId == records[0].Id.ToString()) &&
+        (await db.RegistrosPunto.SingleAsync(x => x.Id == records[0].Id)).Resultado == RegistroResultado.Pendiente, "Código incorrecto se audita y no registra el punto");
+    string expected;
+    await using (var db = store.Open()) expected = (await db.PuntosControl.Where(x => x.Id == records[0].PuntoControlId).Select(x => x.CodigoVerificacion).SingleAsync())!;
+    await Mark(0, RegistroResultado.Completado, null, expected.Replace("-", "").ToLowerInvariant());
+    await Mark(1, RegistroResultado.Omitido, "Puerta cerrada", null);
+    await using (var db = store.Open())
+        Check((await db.RegistrosPunto.SingleAsync(x => x.Id == records[0].Id)).Verificado && !(await db.RegistrosPunto.SingleAsync(x => x.Id == records[1].Id)).Verificado, "Código correcto verifica el punto; omitir no lo exige");
+    await using (var db = store.Open()) await new IncidenciaService(db, store.Session).CrearAsync(new(roundId, null, "Prueba", IncidenciaPrioridad.Alta, "=1+1"), store.Session.UserId!);
+    await Reject(() => store.SetRouteCodesAsync(routeId, false), "Prefecto no administra códigos");
+    await Reject(() => store.MovePointAsync(records[0].PuntoControlId, 1), "Prefecto no reordena puntos");
+
+    // Reportes
+    store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+    var csv = Path.Combine(directory, "incidencias.csv");
+    Check(await store.ExportReportAsync(ReportKind.Incidencias, csv, DateTime.Today.AddDays(-1), DateTime.Today, null) >= 1, "Exporta incidencias");
+    var bytes = File.ReadAllBytes(csv);
+    Check(bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF && File.ReadAllText(csv).Contains("\"'=1+1\""), "CSV con BOM y fórmulas neutralizadas");
+    var detail = Path.Combine(directory, "puntos.csv");
+    Check(await store.ExportReportAsync(ReportKind.Puntos, detail, null, null, null) >= 4 && File.ReadAllText(detail).Contains("\"Sí\""), "Exporta detalle de puntos con verificación");
+    Check(await store.ExportReportAsync(ReportKind.Rondines, Path.Combine(directory, "rondines.csv"), null, null, null) >= 1, "Exporta rondines");
+    Check(await store.ExportReportAsync(ReportKind.Rondines, Path.Combine(directory, "vacio.csv"), DateTime.Today.AddYears(-5), DateTime.Today.AddYears(-4), null) == 0, "Filtro de fechas sin resultados");
+    await Reject(() => store.ExportReportAsync(ReportKind.Rondines, csv, DateTime.Today, DateTime.Today.AddDays(-3), null), "Rango de fechas invertido bloqueado");
+
+    // Usuarios y contraseñas
+    string otherId;
+    await using (var db = store.Open()) otherId = (await db.Users.SingleAsync(x => x.Email == "otro@example.com")).Id;
+    await Reject(() => store.UpdateUserAsync(otherId, "Otro", "prefecto@example.com", Roles.Prefecto), "Correo duplicado bloqueado al editar");
+    await Reject(() => store.UpdateUserAsync(otherId, "", "otro@example.com", Roles.Prefecto), "Nombre vacío bloqueado al editar");
+    await Reject(() => store.UpdateUserAsync(store.Session.UserId!, "Administrador", "admin@example.com", Roles.Prefecto), "No cambia su propio rol");
+    await Reject(() => store.UpdateUserAsync(otherId, "Otro", "otro@example.com", Roles.Administrador), "No cambia el rol de un prefecto con rondín en curso");
+    await store.UpdateUserAsync(otherId, "Otro prefecto editado", "OTRO@example.com", Roles.Prefecto);
+    await using (var db = store.Open()) Check((await db.Users.SingleAsync(x => x.Id == otherId)).Email == "otro@example.com" && (await db.Users.SingleAsync(x => x.Id == otherId)).NombreCompleto == "Otro prefecto editado", "Editar usuario normaliza el correo");
+    await Reject(() => store.ResetPasswordAsync(store.Session.UserId!, "NuevaClave12345!"), "Restablecer no aplica a la propia cuenta");
+    await Reject(() => store.ResetPasswordAsync(otherId, "corta"), "Contraseña corta bloqueada");
+    await store.ResetPasswordAsync(otherId, "ClaveRestablecida1!");
+    await Reject(() => store.LoginAsync("otro@example.com", "OtroPrefecto123!"), "La contraseña anterior deja de funcionar");
+    await store.LoginAsync("otro@example.com", "ClaveRestablecida1!");
+    await Reject(() => store.ChangeOwnPasswordAsync("incorrecta", "OtraClave12345!"), "Cambio exige la contraseña actual");
+    await Reject(() => store.ChangeOwnPasswordAsync("ClaveRestablecida1!", "corta"), "Cambio exige longitud mínima");
+    await Reject(() => store.ResetPasswordAsync(otherId, "OtraClave12345!"), "Prefecto no restablece contraseñas");
+    await store.ChangeOwnPasswordAsync("ClaveRestablecida1!", "ClavePropia12345!");
+    store.Session.SignOut(); await store.LoginAsync("otro@example.com", "ClavePropia12345!");
+    store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+
+    // Respaldo y restauración
+    var zip = Path.Combine(directory, "respaldo.zip");
+    await store.CreateBackupAsync(zip);
+    using (var archive = System.IO.Compression.ZipFile.OpenRead(zip))
+        Check(archive.GetEntry("manifiesto.json") is not null && archive.GetEntry("ftracker-desktop.db") is not null && archive.Entries.Any(x => x.FullName.StartsWith("evidencias/")), "Respaldo incluye manifiesto, base y evidencias");
+    await store.AddUserAsync("Usuario posterior", "posterior@example.com", "Posterior12345!", Roles.Prefecto);
+    var fake = Path.Combine(directory, "falso.zip");
+    using (var archive = System.IO.Compression.ZipFile.Open(fake, System.IO.Compression.ZipArchiveMode.Create)) archive.CreateEntry("hola.txt");
+    await Reject(() => store.RestoreBackupAsync(fake), "Un .zip ajeno no se restaura");
+    await Reject(() => store.RestoreBackupAsync(Path.Combine(directory, "no-existe.zip")), "Respaldo inexistente informa error controlado");
+    await using (var db = store.Open()) Check(await db.Users.AnyAsync(x => x.Email == "posterior@example.com"), "Restaurar un archivo inválido no altera los datos");
+    await store.RestoreBackupAsync(zip);
+    Check(store.Session.User is null, "Restaurar cierra la sesión");
+    await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+    await using (var db = store.Open())
+        Check(!await db.Users.AnyAsync(x => x.Email == "posterior@example.com") && await db.Users.AnyAsync(x => x.Email == "otro@example.com") &&
+            await db.Auditorias.AnyAsync(x => x.Accion == "RestaurarRespaldo"), "Restaurar devuelve el estado del respaldo y lo audita");
+    Check(Directory.EnumerateFiles(Path.Combine(directory, "respaldos"), "antes-de-restaurar-*.zip").Any(), "Restaurar guarda un respaldo de seguridad previo");
+    await using (var db = store.Open()) Check((await store.ReadEvidenceAsync((await db.Evidencias.FirstAsync()).Id)).Length > 0, "Las evidencias siguen legibles tras restaurar");
 }

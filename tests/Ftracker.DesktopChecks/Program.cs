@@ -63,8 +63,9 @@ internal static class Program
         Check((string)themeToggle.Content == "Claro" && Math.Abs(((TranslateTransform)thumb.RenderTransform).X) < .1, "Interruptor claro devuelve la perilla a su posición");
         SaveImage(window, Path.Combine(themeArtifacts, "interfaz-modo-claro.png"));
         Check(((SolidColorBrush)window.Background).Color == Color.FromRgb(243, 246, 250), "Modo claro se restaura en la misma ventana");
-        Check(tabs.Items.Count == 5, "Navegación de administrador");
-        Check(tabs.Items.Cast<TabItem>().Select(x => (string)x.Header).SequenceEqual(new[] { "Usuarios", "Rutas y puntos", "Rondines", "Incidencias", "Bitácora" }), "Orden de navegación de administrador");
+        Check(tabs.Items.Count == 6, "Navegación de administrador");
+        Check(tabs.Items.Cast<TabItem>().Select(x => (string)x.Header).SequenceEqual(new[] { "Usuarios", "Rutas y puntos", "Rondines", "Incidencias", "Reportes y respaldo", "Bitácora" }), "Orden de navegación de administrador");
+        Check(Descendants<Button>(window).Any(x => (string?)x.Content == "Cambiar contraseña"), "Cambio de contraseña disponible desde el encabezado");
         tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Rondines"); window.UpdateLayout();
         Check(!Descendants<System.Windows.Controls.Primitives.UniformGrid>(window).Any(), "Encabezado sin tarjetas de resumen");
         Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Reasignar").IsEnabled, "No reasigna sin seleccionar rondín");

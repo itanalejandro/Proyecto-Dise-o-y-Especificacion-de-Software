@@ -54,6 +54,43 @@ Los PDF muestran un aviso y permiten **Exportar archivo**; no tienen vista previ
 
 Solo el administrador y el prefecto del rondín pueden consultar sus evidencias, también después del cierre o cancelación. Si un archivo fue movido/eliminado o una imagen está dañada, el visor informa el problema sin cerrar la aplicación. Se muestran avisos para archivos vacíos, mayores de 5 MB o imágenes de dimensiones no compatibles; las vistas previas no mantienen bloqueado el original.
 
+### Verificar la presencia en cada punto (código o QR)
+
+Por defecto un prefecto puede marcar un punto sin estar ahí. Para evitarlo, el administrador puede exigir un código por punto:
+
+1. En **Rutas y puntos**, selecciona la ruta y pulsa **Editar puntos → Activar códigos**. Cada punto recibe un código de 8 caracteres (por ejemplo `K7M2-9QXP`, sin letras ni números ambiguos).
+2. Pulsa **Imprimir códigos (QR)**: se guarda una hoja HTML con el código y un QR por punto. Ábrela con el navegador, imprímela y colócala en cada punto. El QR contiene solo el código.
+3. Al **Completar punto**, el prefecto escribe el código o lo escanea con un lector de QR USB (que funciona como teclado). Es obligatorio también al completar desde el croquis. **Omitir punto** no lo exige, porque ahí se justifica con una observación.
+4. Un código incorrecto no registra el punto y queda en la bitácora (`CodigoPuntoIncorrecto`). Los puntos verificados se marcan en la columna **Código** y en el reporte de puntos.
+
+**Regenerar códigos** invalida los impresos; **Desactivar códigos** vuelve a permitir completar sin verificar. Un punto agregado a una ruta con códigos recibe el suyo. El prefecto nunca ve los códigos en la aplicación. La cámara de un teléfono no se usa: el QR se lee con un lector USB o se escribe a mano.
+
+### Editar usuarios, puntos y contraseñas
+
+- **Usuarios → Editar usuario** cambia nombre, correo y rol. No se puede cambiar el propio rol, dejar la aplicación sin administrador activo ni cambiar el rol de un prefecto con rondines programados o en curso. **Restablecer contraseña** fija una contraseña nueva a otro usuario (mínimo 12 caracteres).
+- **Cambiar contraseña** (encabezado, todos los usuarios) pide la contraseña actual.
+- **Rutas y puntos → Editar puntos**: agregar un punto al final, renombrar y subir/bajar. Los cambios se aplican a los rondines que aún no inician; los iniciados conservan el nombre y el orden que tenían. Todo queda en la bitácora.
+
+### Alertas de atrasos
+
+La aplicación avisa con un banner rojo cuando un rondín programado lleva más de 15 minutos sin iniciarse (la columna **Alerta** muestra *Atrasado*). El administrador también ve cuántas incidencias de prioridad alta o crítica siguen sin resolver. Se reevalúa cada minuto con la hora actual; no envía correos ni notificaciones fuera de la aplicación.
+
+### Reportes (CSV)
+
+En **Reportes y respaldo**, el administrador exporta a CSV, que Excel abre directamente (UTF-8 con BOM, hora local), filtrando por fechas y prefecto:
+
+- **Rondines**: un renglón por recorrido, con minutos de recorrido y conteo de puntos completados, omitidos, pendientes y verificados.
+- **Puntos**: un renglón por punto registrado, con su resultado, hora y verificación por código.
+- **Incidencias**: con punto, prioridad, estado y horas hasta resolver.
+
+El texto libre que empieza con `=`, `+`, `-` o `@` se exporta con un apóstrofo inicial para que Excel no lo trate como fórmula. No genera archivos `.xlsx` ni PDF.
+
+### Respaldo y restauración
+
+**Crear respaldo** guarda un `.zip` con una copia consistente de la base de datos y todas las evidencias. **No está cifrado**: contiene usuarios (con contraseñas protegidas por hash), incidencias y evidencias; guárdalo en un lugar seguro.
+
+**Restaurar respaldo** reemplaza *todos* los datos actuales. Antes guarda automáticamente una copia de lo actual en `%LOCALAPPDATA%\Ftracker\respaldos\antes-de-restaurar-*.zip`, valida el archivo (estructura, integridad y que haya un administrador activo) y cierra Ftracker al terminar; al abrirlo de nuevo se inicia sesión con una cuenta del respaldo. Las evidencias se resuelven por nombre dentro de la carpeta de la aplicación, así que un respaldo se puede restaurar en otro equipo.
+
 ## Datos y almacenamiento
 
 SQLite usa el componente nativo de Windows `winsqlite3.dll`. No necesita MySQL ni SQL Server.
@@ -105,7 +142,7 @@ El croquis se incluye en la aplicación y funciona sin internet. Al iniciar se a
 
 ### Navegación y formularios
 
-Para el administrador, el orden lateral es **Usuarios → Rutas y puntos → Rondines → Incidencias → Bitácora**. El prefecto conserva **Mis rondines → Incidencias**. Las opciones laterales y el panel principal tienen bordes redondeados.
+Para el administrador, el orden lateral es **Usuarios → Rutas y puntos → Rondines → Incidencias → Reportes y respaldo → Bitácora**. El prefecto conserva **Mis rondines → Incidencias**. Las opciones laterales y el panel principal tienen bordes redondeados.
 
 La navegación lateral agrupa rondines, incidencias y catálogos. El encabezado compacto muestra el logo, el usuario y las acciones de sesión, sin tarjetas de resumen. Las tablas tienen búsqueda por texto (sin distinguir mayúsculas ni acentos), selección de fila completa y mensajes cuando están vacías. Las acciones se habilitan según la selección y el estado del registro. La fecha de asignación se elige con calendario y la hora mediante el reloj interactivo o escritura en formato de 24 horas.
 
@@ -142,4 +179,6 @@ Se retiró el código fuente del proyecto ASP.NET Core y se sustituyó por Deskt
 
 ## Alcance y pendientes
 
-Incluye alta y activación/desactivación de usuarios/rutas, puntos iniciales, croquis interactivo, asignación, reasignación, cancelación, ejecución, cierre, incidencias desde tabla y croquis, evidencias y bitácora. Aún faltan edición de perfiles y nombres/orden de puntos existentes, cambio/recuperación de contraseña, filtros avanzados y un instalador. La creación automática del esquema y la actualización aditiva del croquis sirven para esta beta; otros cambios futuros de estructura requerirán migraciones.
+Incluye alta, edición y activación/desactivación de usuarios, rutas con edición de puntos (agregar, renombrar, reordenar), verificación opcional por código/QR, croquis interactivo, asignación, reasignación, cancelación, ejecución, cierre, alertas de atraso, incidencias desde tabla y croquis, evidencias, reportes CSV, respaldo/restauración, cambio y restablecimiento de contraseña y bitácora.
+
+Aún faltan: operación compartida entre varios equipos (cada PC tiene su propia base; haría falta un servidor o sincronización), reportes en Excel/PDF nativos, filtros avanzados en pantalla, eliminar o desactivar puntos individuales, bloqueo por intentos fallidos de acceso y cierre de sesión por inactividad, cifrado de la base y los respaldos, y un instalador. La creación automática del esquema y las actualizaciones aditivas de columnas sirven para esta beta; otros cambios futuros de estructura requerirán migraciones.

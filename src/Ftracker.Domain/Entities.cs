@@ -30,6 +30,8 @@ public sealed class PuntoControl : EntidadAuditable
     public string? Descripcion { get; set; }
     public int Orden { get; set; }
     public bool Activo { get; set; } = true;
+    /// <summary>Código que el prefecto debe escanear o escribir para completar el punto. Null = sin verificación.</summary>
+    public string? CodigoVerificacion { get; set; }
 }
 
 public sealed class Rondin : EntidadAuditable
@@ -56,6 +58,8 @@ public sealed class RegistroPunto : EntidadAuditable
     public DateTime? MarcadoEn { get; set; }
     public RegistroResultado Resultado { get; set; } = RegistroResultado.Pendiente;
     public string? Observaciones { get; set; }
+    /// <summary>True cuando el punto se completó presentando su código de verificación.</summary>
+    public bool Verificado { get; set; }
 }
 
 public sealed class Incidencia : EntidadAuditable

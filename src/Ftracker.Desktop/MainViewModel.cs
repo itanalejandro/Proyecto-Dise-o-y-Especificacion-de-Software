@@ -11,9 +11,12 @@ public sealed record RouteRow(Guid Id, string Nombre, int Puntos, bool Activa);
 public sealed record RoundRow(Guid Id, string Ruta, string Prefecto, DateTime Programado, RondinEstado Estado, DateTime? CerradoEn = null)
 {
     public string CerradoEl => CerradoEn?.ToString("dd/MM/yyyy HH:mm") ?? "—";
+    /// <summary>Un rondín programado que pasó más de 15 minutos de su hora sin iniciarse.</summary>
+    public string Alerta => Estado == RondinEstado.Programado && Programado < DateTime.Now.AddMinutes(-15) ? "Atrasado" : "";
 }
-public sealed record PointRow(Guid Id, Guid PuntoId, string Nombre, RegistroResultado Resultado, string? Observaciones)
+public sealed record PointRow(Guid Id, Guid PuntoId, string Nombre, RegistroResultado Resultado, string? Observaciones, bool Verificado = false)
 {
+    public string Verificacion => Verificado ? "Verificado" : "—";
     public IReadOnlyList<PointIncident> IncidenciasConEvidencia { get; init; } = [];
     public bool TieneEvidencia => IncidenciasConEvidencia.Count > 0;
 }

@@ -18,13 +18,15 @@ public sealed partial class LocalStore
 {
     private readonly DbContextOptions<FtrackerDbContext> options;
     public string DataDirectory { get; }
+    private const string DbFileName = "ftracker-desktop.db";
+    private string DbPath => Path.Combine(DataDirectory, DbFileName);
     public LocalSession Session { get; } = new();
     public LocalStore(string? directory = null)
     {
         SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
         DataDirectory = directory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ftracker");
         Directory.CreateDirectory(DataDirectory);
-        options = new DbContextOptionsBuilder<FtrackerDbContext>().UseSqlite(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = Path.Combine(DataDirectory, "ftracker-desktop.db"), ForeignKeys = true }.ToString()).Options;
+        options = new DbContextOptionsBuilder<FtrackerDbContext>().UseSqlite(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = DbPath, ForeignKeys = true }.ToString()).Options;
     }
     public FtrackerDbContext Open() => new(options);
     public async Task InitializeAsync()
@@ -40,6 +42,30 @@ public sealed partial class LocalStore
                 CONSTRAINT "CK_UbicacionesCroquis_Rango" CHECK (X >= 0 AND X <= 1 AND Y >= 0 AND Y <= 1)
             );
             """);
+        // Columnas añadidas después de la beta: se agregan solo si faltan, sin tocar los datos existentes.
+        await EnsureColumnAsync(db, "PuntosControl", "CodigoVerificacion", "TEXT NULL");
+        await EnsureColumnAsync(db, "RegistrosPunto", "Verificado", "INTEGER NOT NULL DEFAULT 0");
+    }
+    private static async Task EnsureColumnAsync(FtrackerDbContext db, string table, string column, string definition)
+    {
+        var connection = db.Database.GetDbConnection();
+        var opened = connection.State != System.Data.ConnectionState.Open;
+        if (opened) await connection.OpenAsync();
+        try
+        {
+            var exists = false;
+            await using (var info = connection.CreateCommand())
+            {
+                info.CommandText = $"PRAGMA table_info(\"{table}\")";
+                await using var reader = await info.ExecuteReaderAsync();
+                while (await reader.ReadAsync()) if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase)) exists = true;
+            }
+            if (exists) return;
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = $"ALTER TABLE \"{table}\" ADD COLUMN \"{column}\" {definition}";
+            await alter.ExecuteNonQueryAsync();
+        }
+        finally { if (opened) await connection.CloseAsync(); }
     }
     public async Task<bool> NeedsSetupAsync() { await using var db = Open(); return !await db.Users.AnyAsync(); }
     public async Task SetupAsync(string name, string email, string password)

@@ -1,5 +1,7 @@
 using Ftracker.Application;
 using Ftracker.Domain;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ftracker.Infrastructure;
@@ -40,6 +42,20 @@ public sealed class RondinService(FtrackerDbContext db, ISession session) : IRon
         var registro = r.Registros.SingleOrDefault(x => x.Id == registroId) ?? throw new ReglaNegocioException("El punto no pertenece al rondín.");
         if (registro.Resultado != RegistroResultado.Pendiente) throw new ReglaNegocioException("El punto ya fue registrado.");
         if (!Enum.IsDefined(c.Resultado) || c.Resultado == RegistroResultado.Pendiente || (c.Resultado == RegistroResultado.Omitido && string.IsNullOrWhiteSpace(c.Observaciones))) throw new ReglaNegocioException("Resultado inválido. Un punto omitido requiere observación.");
+        if (c.Resultado == RegistroResultado.Completado)
+        {
+            var esperado = await db.PuntosControl.AsNoTracking().Where(x => x.Id == registro.PuntoControlId).Select(x => x.CodigoVerificacion).SingleOrDefaultAsync(ct);
+            if (!string.IsNullOrEmpty(esperado))
+            {
+                if (!CodigosIguales(esperado, c.Codigo))
+                {
+                    // Queda constancia del intento fallido; no se modifica el registro del punto.
+                    await Auditar(actorId, "CodigoPuntoIncorrecto", "RegistroPunto", registro.Id, null, ct); await db.SaveChangesAsync(ct);
+                    throw new ReglaNegocioException("El código no coincide con el del punto. Escanéalo o escríbelo de nuevo en el punto de control.");
+                }
+                registro.Verificado = true;
+            }
+        }
         registro.Resultado = c.Resultado; registro.Observaciones = c.Observaciones; registro.MarcadoEn = DateTime.UtcNow; registro.ActualizadoEn = DateTime.UtcNow;
         r.ActualizadoEn = DateTime.UtcNow; // Detect a concurrent cancellation before saving a result.
         await Auditar(actorId, "MarcarPunto", "RegistroPunto", registro.Id, c.Resultado.ToString(), ct); await db.SaveChangesAsync(ct); return registro;
@@ -78,6 +94,9 @@ public sealed class RondinService(FtrackerDbContext db, ISession session) : IRon
         await Auditar(actorId, "Reasignar", "Rondin", id, $"Prefecto anterior: {previous}. Nuevo prefecto: {command.PrefectoId}. Motivo: {command.Motivo.Trim()}", ct);
         await db.SaveChangesAsync(ct); return round;
     }
+    internal static string NormalizarCodigo(string? codigo) => new string((codigo ?? "").Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+    private static bool CodigosIguales(string esperado, string? recibido) =>
+        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(NormalizarCodigo(esperado)), Encoding.UTF8.GetBytes(NormalizarCodigo(recibido)));
     private void ValidarAdministrador(string actorId)
     {
         if (session.UserId != actorId || session.Role != Roles.Administrador) throw new ReglaNegocioException("Se requiere administrador.");

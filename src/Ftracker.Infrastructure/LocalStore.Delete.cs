@@ -57,13 +57,12 @@ public sealed partial class LocalStore
         Audit(db, "EliminarRondin", id.ToString(), $"Ruta: {round.Ruta.Nombre}. Estado: {round.Estado}. Incidencias: {round.Incidencias.Count}. Evidencias: {files.Count}");
         await db.SaveChangesAsync();
         // Solo después de confirmar la base de datos, y solo dentro de la carpeta de evidencias de la aplicación.
-        var directory = Path.GetFullPath(Path.Combine(DataDirectory, "evidencias"));
         foreach (var file in files)
         {
             try
             {
-                var path = Path.GetFullPath(file);
-                if (string.Equals(Path.GetDirectoryName(path), directory, StringComparison.OrdinalIgnoreCase) && File.Exists(path)) File.Delete(path);
+                var path = ResolveEvidencePath(file);
+                if (File.Exists(path)) File.Delete(path);
             }
             catch (Exception) { /* el registro ya se eliminó; un archivo huérfano no debe interrumpir la operación */ }
         }

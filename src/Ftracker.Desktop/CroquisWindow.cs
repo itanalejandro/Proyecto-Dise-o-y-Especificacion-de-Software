@@ -194,11 +194,12 @@ internal sealed class CroquisWindow : Window
         if (!canRegister || Selected is not { Resultado: RegistroResultado.Pendiente } point) return;
         var editor = new Editor(this, result == RegistroResultado.Omitido ? "Omitir punto" : "Completar punto");
         editor.Label(point.Nombre);
+        var code = result == RegistroResultado.Completado && await store.RequiresCodeAsync(point.Id) ? editor.Text("Código del punto (escanéalo con el lector o escríbelo)") : null;
         var notes = editor.Text(result == RegistroResultado.Omitido ? "Observación (obligatoria)" : "Observación (opcional)");
         if (!editor.Save(async () =>
         {
             await using var db = store.Open();
-            await new RondinService(db, store.Session).MarcarPuntoAsync(targetId, point.Id, new(result, notes.Text), store.Session.UserId!);
+            await new RondinService(db, store.Session).MarcarPuntoAsync(targetId, point.Id, new(result, notes.Text, code?.Text), store.Session.UserId!);
         })) return;
         var round = await store.GetRoundCroquisAsync(targetId);
         points = round.Puntos.ToList(); canRegister = round.PuedeRegistrar; Rebind(point.Id);

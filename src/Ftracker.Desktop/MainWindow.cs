@@ -9,15 +9,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Win32;
 
 namespace Ftracker.Desktop;
-public sealed class MainWindow : Window
+public sealed partial class MainWindow : Window
 {
     private readonly LocalStore store;
     private readonly MainViewModel vm;
     private readonly TabControl tabs = new();
     private readonly DataGrid users = Table(("Nombre", "Nombre"), ("Correo", "Correo"), ("Rol", "Rol"), ("Activo", "Activo"));
     private readonly DataGrid routes = Table(("Ruta", "Nombre"), ("Puntos", "Puntos"), ("Activa", "Activa"));
-    private readonly DataGrid rounds = Table(("Ruta", "Ruta"), ("Prefecto", "Prefecto"), ("Programado", "Programado"), ("Estado", "Estado"), ("Cerrado el", "CerradoEl"));
-    private readonly DataGrid points = Table(("Punto", "Nombre"), ("Resultado", "Resultado"), ("Observación", "Observaciones"));
+    private readonly DataGrid rounds = Table(("Ruta", "Ruta"), ("Prefecto", "Prefecto"), ("Programado", "Programado"), ("Estado", "Estado"), ("Cerrado el", "CerradoEl"), ("Alerta", "Alerta"));
+    private readonly DataGrid points = Table(("Punto", "Nombre"), ("Resultado", "Resultado"), ("Observación", "Observaciones"), ("Código", "Verificacion"));
     private readonly DataGrid incidents = Table(("Ruta", "Ruta"), ("Tipo", "Tipo"), ("Descripción", "Descripcion"), ("Prioridad", "Prioridad"), ("Estado", "Estado"), ("Evidencias", "Archivos"));
     private readonly TextBlock status = new() { Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap };
     private readonly List<(Button Button, Func<bool> Enabled)> contextualActions = [];
@@ -34,7 +34,7 @@ public sealed class MainWindow : Window
         var header = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 18) };
         DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
         var actions = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
-        actions.Children.Add(ThemeManager.ToggleButton());
+        actions.Children.Add(ThemeManager.ToggleButton()); actions.Children.Add(PasswordButton());
         var update = ActionButton("Actualizar datos", Refresh); update.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(update);
         var logout = ActionButton("Cerrar sesión", Logout); logout.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(logout);
         DockPanel.SetDock(actions, Dock.Right); header.Children.Add(actions);
@@ -42,10 +42,10 @@ public sealed class MainWindow : Window
         identity.Children.Add(new TextBlock { Text = $"{store.Session.User!.NombreCompleto} · {store.Session.Role}", FontSize = 12, Foreground = ThemeManager.Get("Muted"), Margin = new Thickness(0, 4, 0, 0) });
         header.Children.Add(identity);
         status.Foreground = ThemeManager.Get("Muted"); status.FontSize = 12;
-        DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status); root.Children.Add(tabs);
+        DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status); AddAlertBanner(root); root.Children.Add(tabs);
         if (vm.IsAdmin) { BuildUsers(); BuildRoutes(); }
         BuildRounds(); BuildIncidents();
-        if (vm.IsAdmin) BuildAudit();
+        if (vm.IsAdmin) { BuildReports(); BuildAudit(); }
         foreach (var grid in new[] { users, routes, rounds, points, incidents }) grid.SelectionChanged += (_, _) => UpdateActions();
         UpdateActions();
         Loaded += async (_, _) => await Run(Refresh);
@@ -89,13 +89,13 @@ public sealed class MainWindow : Window
     }
     private void BuildUsers()
     {
-        var panel = NewTab("Usuarios", "Crea cuentas para el equipo y administra su acceso."); var bar = new WrapPanel(); bar.Children.Add(ActionButton("Nuevo usuario", AddUser)); bar.Children.Add(ActionButton("Activar / desactivar", ToggleUser, () => users.SelectedItem is UserRow u && u.Id != store.Session.UserId)); bar.Children.Add(DangerButton("Eliminar usuario", DeleteUser, () => users.SelectedItem is UserRow u && u.Id != store.Session.UserId)); panel.Children.Add(bar);
+        var panel = NewTab("Usuarios", "Crea cuentas para el equipo y administra su acceso."); var bar = new WrapPanel(); bar.Children.Add(ActionButton("Nuevo usuario", AddUser)); bar.Children.Add(ActionButton("Editar usuario", EditUser, () => users.SelectedItem is UserRow)); bar.Children.Add(ActionButton("Restablecer contraseña", ResetUserPassword, () => users.SelectedItem is UserRow u && u.Id != store.Session.UserId)); bar.Children.Add(ActionButton("Activar / desactivar", ToggleUser, () => users.SelectedItem is UserRow u && u.Id != store.Session.UserId)); bar.Children.Add(DangerButton("Eliminar usuario", DeleteUser, () => users.SelectedItem is UserRow u && u.Id != store.Session.UserId)); panel.Children.Add(bar);
         AddSearch(panel, users, "Buscar por nombre, correo o rol");
         users.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Users))); users.Height = 350; AddTable(panel, users, "No hay usuarios que coincidan con la búsqueda.");
     }
     private void BuildRoutes()
     {
-        var panel = NewTab("Rutas y puntos", "Organiza los recorridos y el orden de sus puntos de revisión."); var bar = new WrapPanel(); bar.Children.Add(ActionButton("Nueva ruta", AddRoute)); bar.Children.Add(ActionButton("Activar / desactivar", ToggleRoute, () => routes.SelectedItem is RouteRow)); bar.Children.Add(ActionButton("Ver puntos", ShowRoute, () => routes.SelectedItem is RouteRow)); panel.Children.Add(bar);
+        var panel = NewTab("Rutas y puntos", "Organiza los recorridos y el orden de sus puntos de revisión."); var bar = new WrapPanel(); bar.Children.Add(ActionButton("Nueva ruta", AddRoute)); bar.Children.Add(ActionButton("Activar / desactivar", ToggleRoute, () => routes.SelectedItem is RouteRow)); bar.Children.Add(ActionButton("Ver puntos", ShowRoute, () => routes.SelectedItem is RouteRow)); bar.Children.Add(ActionButton("Editar puntos", EditRoutePoints, () => routes.SelectedItem is RouteRow)); panel.Children.Add(bar);
         bar.Children.Add(ActionButton("Ubicar en croquis", EditRouteCroquis, () => routes.SelectedItem is RouteRow));
         bar.Children.Add(DangerButton("Eliminar ruta", DeleteRoute, () => routes.SelectedItem is RouteRow));
         AddSearch(panel, routes, "Buscar ruta por nombre");
@@ -119,7 +119,7 @@ public sealed class MainWindow : Window
         routes.SelectedItem = vm.Routes.FirstOrDefault(x => x.Id == routeId);
         incidents.SelectedItem = vm.Incidents.FirstOrDefault(x => x.Id == incidentId);
         if (!vm.IsAdmin) await LoadPoints();
-        status.Text = "Actualizado a las " + DateTime.Now.ToString("HH:mm");
+        status.Text = "Actualizado a las " + DateTime.Now.ToString("HH:mm"); UpdateAlertBanner();
         UpdateActions();
     }
     private async Task LoadPoints()
@@ -130,7 +130,7 @@ public sealed class MainWindow : Window
             .Where(x => x.RondinId == r.Id && x.PuntoControlId != null && x.Evidencias.Any())
             .OrderByDescending(x => x.CreadoEn)
             .Select(x => new { x.Id, x.PuntoControlId, x.Tipo, x.Descripcion }).ToListAsync();
-        var rows = await db.RegistrosPunto.AsNoTracking().Where(x => x.RondinId == r.Id).OrderBy(x => x.Orden).Select(x => new PointRow(x.Id, x.PuntoControlId, x.PuntoNombre, x.Resultado, x.Observaciones)).ToListAsync();
+        var rows = await db.RegistrosPunto.AsNoTracking().Where(x => x.RondinId == r.Id).OrderBy(x => x.Orden).Select(x => new PointRow(x.Id, x.PuntoControlId, x.PuntoNombre, x.Resultado, x.Observaciones, x.Verificado)).ToListAsync();
         points.ItemsSource = rows.Select(p => p with
         {
             IncidenciasConEvidencia = linked.Where(i => i.PuntoControlId == p.PuntoId)
@@ -274,8 +274,8 @@ public sealed class MainWindow : Window
     private async Task Mark(RegistroResultado result)
     {
         var r = Selected<RoundRow>(rounds); var p = Selected<PointRow>(points);
-        var d = new Editor(this, result == RegistroResultado.Omitido ? "Omitir punto" : "Completar punto"); d.Label(p.Nombre); var notes = d.Text("Observación" + (result == RegistroResultado.Omitido ? " (obligatoria)" : " (opcional)"));
-        if (d.Save(async () => { await using var db = store.Open(); await new RondinService(db, store.Session).MarcarPuntoAsync(r.Id, p.Id, new(result, notes.Text), store.Session.UserId!); })) await Refresh();
+        var d = new Editor(this, result == RegistroResultado.Omitido ? "Omitir punto" : "Completar punto"); d.Label(p.Nombre); var code = result == RegistroResultado.Completado && await store.RequiresCodeAsync(p.Id) ? d.Text("Código del punto (escanéalo con el lector o escríbelo)") : null; var notes = d.Text("Observación" + (result == RegistroResultado.Omitido ? " (obligatoria)" : " (opcional)"));
+        if (d.Save(async () => { await using var db = store.Open(); await new RondinService(db, store.Session).MarcarPuntoAsync(r.Id, p.Id, new(result, notes.Text, code?.Text), store.Session.UserId!); })) await Refresh();
     }
     private async Task CloseRound()
     {
@@ -374,7 +374,7 @@ public sealed class MainWindow : Window
     {
         UserRow u => $"{u.Nombre} {u.Correo} {u.Rol} {FriendlyValueConverter.Label(u.Activo)}",
         RouteRow r => $"{r.Nombre} {FriendlyValueConverter.Label(r.Activa)}",
-        RoundRow r => $"{r.Ruta} {r.Prefecto} {FriendlyValueConverter.Label(r.Estado)} {FriendlyValueConverter.Label(r.Programado)} {r.CerradoEl}",
+        RoundRow r => $"{r.Ruta} {r.Prefecto} {FriendlyValueConverter.Label(r.Estado)} {FriendlyValueConverter.Label(r.Programado)} {r.CerradoEl} {r.Alerta}",
         IncidentRow i => $"{i.Ruta} {i.Tipo} {i.Descripcion} {FriendlyValueConverter.Label(i.Prioridad)} {FriendlyValueConverter.Label(i.Estado)}",
         _ => row.ToString() ?? ""
     };
@@ -407,6 +407,7 @@ internal sealed class Editor : Window
     }
     public void Label(string text) => panel.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 2) });
     public TextBox Text(string label, string initial = "", bool multiline = false) { Label(label); var box = new TextBox { Text = initial, AcceptsReturn = multiline, Height = multiline ? 110 : double.NaN, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = multiline ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled }; AddField(box, label); return box; }
+    public DatePicker Date(string label, DateTime? initial = null) { Label(label); var date = new DatePicker { SelectedDate = initial, Language = System.Windows.Markup.XmlLanguage.GetLanguage("es-MX"), SelectedDateFormat = DatePickerFormat.Short }; AddField(date, label); return date; }
     public PasswordBox Password(string label) { Label(label); var box = new PasswordBox(); AddField(box, label); return box; }
     public ComboBox Choice<T>(string label, IEnumerable<T> items, string display = "")
     {

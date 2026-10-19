@@ -3,7 +3,7 @@ using Ftracker.Domain;
 namespace Ftracker.Application;
 
 public sealed record CrearRondinCommand(Guid RutaId, string PrefectoId, DateTime ProgramadoPara, string? Observaciones);
-public sealed record MarcarPuntoCommand(RegistroResultado Resultado, string? Observaciones);
+public sealed record MarcarPuntoCommand(RegistroResultado Resultado, string? Observaciones, string? Codigo = null);
 public sealed record CrearIncidenciaCommand(Guid RondinId, Guid? PuntoControlId, string Tipo, IncidenciaPrioridad Prioridad, string Descripcion);
 public sealed record CambiarIncidenciaCommand(IncidenciaEstado Estado, string? Comentario);
 public sealed record ReasignarRondinCommand(string PrefectoId, string Motivo);

@@ -24,10 +24,7 @@ public sealed partial class LocalStore
         try
         {
             // Only read the app's local evidence directory; never load a URI or arbitrary path from the database.
-            var directory = Path.GetFullPath(Path.Combine(DataDirectory, "evidencias"));
-            var path = Path.GetFullPath(evidence.RutaArchivo);
-            if (!string.Equals(Path.GetDirectoryName(path), directory, StringComparison.OrdinalIgnoreCase))
-                throw new ReglaNegocioException("La ubicación del archivo no es válida para esta evidencia.");
+            var path = ResolveEvidencePath(evidence.RutaArchivo);
             await using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
             if (input.Length == 0 || input.Length > 5 * 1024 * 1024)
                 throw new ReglaNegocioException("El archivo está vacío o supera el límite de 5 MB.");
@@ -41,6 +38,15 @@ public sealed partial class LocalStore
         catch (IOException) { throw new ReglaNegocioException("No se pudo leer el archivo. Puede estar en uso o no disponible en este equipo."); }
         catch (ArgumentException) { throw new ReglaNegocioException("La ubicación del archivo no es válida para esta evidencia."); }
         catch (NotSupportedException) { throw new ReglaNegocioException("La ubicación del archivo no es válida para esta evidencia."); }
+    }
+
+    /// <summary>Resuelve el archivo por su nombre dentro de la carpeta de evidencias actual. Así un respaldo restaurado en otro equipo sigue funcionando y nunca se lee fuera de esa carpeta.</summary>
+    internal string ResolveEvidencePath(string stored)
+    {
+        var name = Path.GetFileName((stored ?? "").Replace('\\', '/'));
+        if (string.IsNullOrWhiteSpace(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            throw new ReglaNegocioException("La ubicación del archivo no es válida para esta evidencia.");
+        return Path.GetFullPath(Path.Combine(DataDirectory, "evidencias", name));
     }
 
     private void RequireEvidenceAccess(Incidencia incident)
