@@ -88,6 +88,7 @@ internal static class Program
         search.Text = "no existe"; Check(grid.Items.Count == 0, "Filtro sin resultados"); search.Clear();
         Check(new TimeSelector(new TimeOnly(15, 50)).Value == new TimeOnly(15, 50) && new TimeSelector(new TimeOnly(0, 5)).Value == new TimeOnly(0, 5) && new TimeSelector(new TimeOnly(12, 0)).Value == new TimeOnly(12, 0), "Selector de hora conserva horas de 12 y 24 horas");
         var previewDir = Path.Combine(Environment.CurrentDirectory, "artifacts"); Directory.CreateDirectory(previewDir);
+        await CheckFormThemes(window, previewDir);
         CheckClock(window, previewDir);
         SaveImage(window, Path.Combine(previewDir, "interfaz-administrador.png"));
         var editor = new Editor(window, "Validación de formulario"); var input = editor.Text("Nombre"); input.Text = "Conservar este contenido";
@@ -392,15 +393,67 @@ internal static class Program
             foreach (var descendant in Descendants<T>(child)) yield return descendant;
         }
     }
+    private static async Task CheckFormThemes(Window owner, string previewDir)
+    {
+        var dialog = new Editor(owner, "Filtros de reportes") { ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500 };
+        var since = dialog.Date("Desde (opcional)");
+        dialog.Date("Hasta (opcional)");
+        var prefect = dialog.Choice("Prefecto", new[] { "Todos los prefectos", "Juan Alberto de prueba", "Rubén de prueba" });
+        dialog.Show(); dialog.UpdateLayout();
+        foreach (var dark in new[] { true, false })
+        {
+            ThemeManager.Apply(dark); dialog.UpdateLayout();
+            var suffix = dark ? "oscuro" : "claro";
+            var toggle = (System.Windows.Controls.Primitives.ToggleButton)prefect.Template.FindName("DropDownToggle", prefect);
+            var frame = (Border)toggle.Template.FindName("Frame", toggle);
+            Check(((SolidColorBrush)frame.Background).Color == ((SolidColorBrush)ThemeManager.Get("Surface")).Color, "Desplegable cerrado sigue el modo " + suffix);
+            Check(((SolidColorBrush)prefect.Foreground).Color == ((SolidColorBrush)ThemeManager.Get("Text")).Color, "Texto seleccionado legible en modo " + suffix);
+            SaveImage(dialog, Path.Combine(previewDir, "interfaz-filtros-" + suffix + ".png"));
+            prefect.IsDropDownOpen = true; await Task.Delay(180); dialog.UpdateLayout();
+            var popup = (System.Windows.Controls.Primitives.Popup)prefect.Template.FindName("PART_Popup", prefect);
+            Check(popup.IsOpen && prefect.ItemContainerGenerator.ContainerFromIndex(1) is ComboBoxItem, "Desplegable abre su lista en modo " + suffix);
+            SaveElement((FrameworkElement)popup.Child, dialog.Background, Path.Combine(previewDir, "interfaz-lista-" + suffix + ".png"));
+            prefect.SelectedIndex = 1; prefect.IsDropDownOpen = false;
+            since.IsDropDownOpen = true; await Task.Delay(100); dialog.UpdateLayout();
+            var calendarPopup = (System.Windows.Controls.Primitives.Popup)since.Template.FindName("PART_Popup", since);
+            Check(calendarPopup.IsOpen, "Calendario abre en modo " + suffix);
+            var calendar = calendarPopup.Child as Calendar ?? Descendants<Calendar>(calendarPopup.Child).Single();
+            var calendarItem = Descendants<System.Windows.Controls.Primitives.CalendarItem>(calendar).Single();
+            var calendarFrame = (Border)calendarItem.Template.FindName("PART_Root", calendarItem);
+            Check(((SolidColorBrush)calendarFrame.Background).Color == ((SolidColorBrush)ThemeManager.Get("Surface")).Color, "Calendario completo sigue el modo " + suffix);
+            var monthGrid = (Grid)calendarItem.Template.FindName("PART_MonthView", calendarItem);
+            Check(monthGrid.Children.Count == 49 && Descendants<TextBlock>(monthGrid).Count(x => Grid.GetRow(x) == 0 && !string.IsNullOrWhiteSpace(x.Text)) >= 7, "Calendario conserva títulos y cuadrícula de días");
+            SaveElement((FrameworkElement)calendarPopup.Child, dialog.Background, Path.Combine(previewDir, "interfaz-calendario-" + suffix + ".png"));
+            var displayed = calendar.DisplayDate;
+            ((Button)calendarItem.Template.FindName("PART_NextButton", calendarItem)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(calendar.DisplayDate.Month == displayed.AddMonths(1).Month, "Calendario permite avanzar de mes en modo " + suffix);
+            ((Button)calendarItem.Template.FindName("PART_PreviousButton", calendarItem)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var header = (Button)calendarItem.Template.FindName("PART_HeaderButton", calendarItem);
+            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); calendar.UpdateLayout();
+            Check(calendar.DisplayMode == CalendarMode.Year && ((Grid)calendarItem.Template.FindName("PART_YearView", calendarItem)).IsVisible, "Vista de meses disponible en modo " + suffix);
+            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); calendar.UpdateLayout();
+            Check(calendar.DisplayMode == CalendarMode.Decade, "Vista de años disponible en modo " + suffix);
+            calendar.DisplayMode = CalendarMode.Month;
+            since.SelectedDate = new DateTime(2026, 10, 21); since.IsDropDownOpen = false;
+            await Task.Delay(150); // Let DatePicker finish returning focus before opening the next popup.
+        }
+        Check(since.SelectedDate == new DateTime(2026, 10, 21) && prefect.SelectedIndex == 1, "Cambio de tema conserva fecha y prefecto elegidos");
+        dialog.Close();
+    }
     private static void SaveImage(Window window, string path)
     {
         window.UpdateLayout(); var content = (FrameworkElement)window.Content;
+        SaveElement(content, window.Background, path);
+    }
+    private static void SaveElement(FrameworkElement content, Brush backgroundBrush, string path)
+    {
+        content.UpdateLayout();
         var bitmap = new RenderTargetBitmap((int)content.ActualWidth, (int)content.ActualHeight, 96, 96, PixelFormats.Pbgra32);
         var background = new DrawingVisual();
         using (var drawing = background.RenderOpen())
         {
             var bounds = new Rect(0, 0, content.ActualWidth, content.ActualHeight);
-            drawing.DrawRectangle(window.Background, null, bounds);
+            drawing.DrawRectangle(backgroundBrush, null, bounds);
             drawing.DrawRectangle(new VisualBrush(content) { Stretch = Stretch.Fill }, null, bounds);
         }
         bitmap.Render(background);
