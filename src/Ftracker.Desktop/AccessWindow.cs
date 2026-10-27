@@ -15,9 +15,10 @@ public sealed class AccessWindow : Window
         Content = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = new Border { Margin = new Thickness(24), Padding = new Thickness(28), Background = ThemeManager.Get("Surface"), CornerRadius = new CornerRadius(12), Child = panel } };
         panel.Children.Add(Brand.Header(32));
         panel.Children.Add(new TextBlock { Text = setup ? "Empecemos con tu cuenta" : "Bienvenido de nuevo", FontSize = 21, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 5) });
-        panel.Children.Add(new TextBlock { Text = setup ? "Esta cuenta administrará usuarios, rutas y rondines en este equipo." : "Usa el correo y la contraseña de tu cuenta de Ftracker.", TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Get("Muted"), Margin = new Thickness(0, 0, 0, 22) });
+        panel.Children.Add(new TextBlock { Text = setup ? "Esta cuenta administrará usuarios, rutas y rondines en este equipo." : "Usa tu correo o nombre completo y la contraseña. Si el nombre está repetido, entra con tu correo.", TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Get("Muted"), Margin = new Thickness(0, 0, 0, 22) });
         var name = new TextBox(); if (setup) { panel.Children.Add(new TextBlock { Text = "Nombre completo" }); panel.Children.Add(name); }
-        panel.Children.Add(new TextBlock { Text = "Correo" }); var email = new TextBox(); panel.Children.Add(email);
+        panel.Children.Add(new TextBlock { Text = setup ? "Correo" : "Correo o nombre completo" }); var email = new TextBox(); panel.Children.Add(email);
+        System.Windows.Automation.AutomationProperties.SetName(email, setup ? "Correo" : "Correo o nombre completo");
         panel.Children.Add(new TextBlock { Text = setup ? "Contraseña (mínimo 12 caracteres)" : "Contraseña" }); var password = new PasswordBox(); panel.Children.Add(password);
         var confirmation = new PasswordBox();
         if (setup) { panel.Children.Add(new TextBlock { Text = "Confirma tu contraseña" }); panel.Children.Add(confirmation); }
@@ -31,7 +32,7 @@ public sealed class AccessWindow : Window
             submit.IsEnabled = false; error.Text = ""; var label = submit.Content; submit.Content = "Un momento…";
             try
             {
-                if (string.IsNullOrWhiteSpace(email.Text) || string.IsNullOrEmpty(password.Password)) throw new Exception("Escribe tu correo y contraseña para continuar.");
+                if (string.IsNullOrWhiteSpace(email.Text) || string.IsNullOrEmpty(password.Password)) throw new Exception("Escribe tu correo o nombre completo y contraseña para continuar.");
                 if (setup && password.Password != confirmation.Password) throw new Exception("Las contraseñas no coinciden. Vuelve a confirmarlas.");
                 if (setup) await store.SetupAsync(name.Text, email.Text, password.Password);
                 await store.LoginAsync(email.Text, password.Password); DialogResult = true;

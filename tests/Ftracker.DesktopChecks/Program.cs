@@ -39,6 +39,7 @@ internal static class Program
         var store = new LocalStore(Path.Combine(Path.GetTempPath(), "Ftracker-ui-" + Guid.NewGuid()));
         await store.InitializeAsync(); await store.SetupAsync("Administración de prueba", "admin@example.com", "PruebaLocal12345!"); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
         await store.AddUserAsync("Prefecto de prueba", "prefecto@example.com", "PrefectoLocal123!", Roles.Prefecto);
+        await store.AddUserAsync("Otro administrador de prueba", "admin2@example.com", "SegundoAdminPrueba123!", Roles.Administrador);
         await store.AddRouteAsync("Edificio Á", "Prueba de interfaz", "Entrada\nPasillo");
         var window = new MainWindow(store) { ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500, Top = 0 };
         window.Show(); await Task.Delay(250); window.UpdateLayout();
@@ -63,6 +64,11 @@ internal static class Program
         Check((string)themeToggle.Content == "Claro" && Math.Abs(((TranslateTransform)thumb.RenderTransform).X) < .1, "Interruptor claro devuelve la perilla a su posición");
         SaveImage(window, Path.Combine(themeArtifacts, "interfaz-modo-claro.png"));
         Check(((SolidColorBrush)window.Background).Color == Color.FromRgb(243, 246, 250), "Modo claro se restaura en la misma ventana");
+        var access = new AccessWindow(store, false) { Owner = window, ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500 };
+        access.Show(); access.UpdateLayout();
+        Check(Descendants<TextBlock>(access).Any(x => x.Text == "Correo o nombre completo"), "Acceso permite identificar correo o nombre completo");
+        Check(!Descendants<Button>(access).Any(x => (x.Content as string)?.Contains("soporte") == true), "Acceso no incluye entradas especiales de soporte");
+        access.Close();
         Check(tabs.Items.Count == 6, "Navegación de administrador");
         Check(tabs.Items.Cast<TabItem>().Select(x => (string)x.Header).SequenceEqual(new[] { "Usuarios", "Rutas y puntos", "Rondines", "Incidencias", "Reportes y respaldo", "Bitácora" }), "Orden de navegación de administrador");
         Check(Descendants<Button>(window).Any(x => (string?)x.Content == "Cambiar contraseña"), "Cambio de contraseña disponible desde el encabezado");
@@ -79,7 +85,7 @@ internal static class Program
         grid.SelectedItem = ((MainViewModel)window.DataContext).Users.Single(x => x.Rol == Roles.Prefecto);
         Check(toggle.IsEnabled, "Acción habilitada para usuario seleccionado");
         Check(Descendants<Button>(window).Single(x => (string?)x.Content == "Eliminar usuario").IsEnabled, "Eliminar usuario se habilita con otro usuario seleccionado");
-        grid.SelectedItem = ((MainViewModel)window.DataContext).Users.Single(x => x.Rol == Roles.Administrador);
+        grid.SelectedItem = ((MainViewModel)window.DataContext).Users.Single(x => x.Id == store.Session.UserId);
         Check(!toggle.IsEnabled, "No permite desactivar la propia cuenta");
         Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Eliminar usuario").IsEnabled, "No permite eliminar la propia cuenta");
         tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Rutas y puntos"); window.UpdateLayout();

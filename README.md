@@ -8,6 +8,40 @@ Haz doble clic en **Iniciar-Ftracker.cmd** en esta carpeta. Busca primero `artif
 
 En el primer inicio crea tu cuenta administradora: nombre, correo y contraseña de al menos 12 caracteres. No hay contraseñas predeterminadas. En inicios posteriores aparece la ventana de acceso.
 
+En el acceso puedes escribir el **correo** o el **nombre completo**. El correo tiene prioridad y es la opción recomendada. Un nombre debe corresponder a una sola cuenta; si está repetido, el sistema pide usar el correo y no intenta adivinar el usuario por su contraseña. Los nombres no son identificadores únicos ni se añadió un campo de usuario nuevo.
+
+No se crean cuentas especiales de soporte ni claves universales. La recuperación disponible sigue siendo el restablecimiento por otro administrador autorizado. Esta actualización no elimina ni modifica automáticamente cuentas que alguien haya creado en una base anterior: revisa esas cuentas con el responsable si utilizaste otra distribución.
+
+## Preparar instalador y paquete portable
+
+La integración de distribución se basa en el paquete v3 del equipo, sin importar sus binarios, cuenta fija de soporte, certificados ni lanzadores de desbloqueo. Requiere Windows y el SDK .NET 10. El generador es una aplicación de consola .NET (`tools/Ftracker.Packaging`), no un script PowerShell. Para el EXE también se necesita **Inno Setup 6.3 o posterior**, instalado por el responsable desde su proveedor oficial; el generador no lo instala automáticamente.
+
+```powershell
+# Pruebas funcionales + pruebas WPF + publicación + instalador + ZIP:
+.\Generar-Instalador.cmd
+
+# Solo publicación y ZIP, sin depender de Inno Setup:
+.\Generar-Instalador.cmd --portable-only
+
+# Para una nueva entrega, utiliza una versión distinta:
+.\Generar-Instalador.cmd --version 3.0.0-beta.2
+
+# Comprobaciones internas del empaquetador, sin generar entregas:
+dotnet run --project tools/Ftracker.Packaging -- --self-test
+```
+
+La versión predeterminada del paquete es `3.0.0-beta.1`. El resultado queda en `dist/Ftracker-Setup-<versión>-win-x64.exe` y `dist/Ftracker-<versión>-win-x64-portable.zip`, con archivos `.sha256` para comprobar su contenido. Si falta el compilador, el modo completo termina con un error claro; `--portable-only` no genera un EXE. `--iscc` permite indicar un compilador existente. Se ejecutan ambos programas de pruebas antes de distribuir; `--skip-tests` los omite expresamente y muestra una advertencia. El generador no sobrescribe entregas existentes: usa otra versión. No borra directorios de publicación anteriores y conserva el staging bajo `artifacts/installer-build` para revisión. Antes de publicar el ZIP comprueba todos sus archivos contra el manifiesto; las sumas de comprobación no sustituyen una firma de confianza.
+
+El instalador es **por cuenta de Windows**, sin pedir elevación: instala en `%LOCALAPPDATA%\Programs\Ftracker`, añade la entrada de desinstalación y el acceso del menú Inicio; el escritorio es opcional. Cierra Ftracker antes de actualizar o desinstalar: no se fuerza su cierre. Los datos permanecen en `%LOCALAPPDATA%\Ftracker`, fuera del programa, y la desinstalación no incluye una orden para borrarlos. Respaldar antes de actualizar sigue siendo necesario. No se ha validado una actualización de instalaciones antiguas de otros paquetes con configuraciones diferentes.
+
+Para el portable, extrae **todo** el ZIP y abre `Iniciar-Ftracker.cmd` o `app/Ftracker.exe`. Incluye runtime .NET, instrucciones, versión y un manifiesto SHA-256; no incluye datos de operación. Cambiar de carpeta no traslada la base y no convierte los datos en una base portable. `dist` y los binarios no se incluyen en Git; comparte una entrega binaria solo después de probarla.
+
+**Firma y seguridad:** los paquetes generados por este proceso no tienen firma digital de confianza. No se crean/importan certificados, no se retiran marcas de seguridad de Windows ni se prometen excepciones de Smart App Control. Si Windows bloquea una entrega, coordina una distribución firmada o una revisión autorizada de la política. El instalador no reemplaza esa validación.
+
+El lanzador principal funciona sin ejecutar archivos `.ps1` y no modifica la política de ejecución. `scripts/Build-Installer.ps1` se conserva solo como envoltorio opcional de compatibilidad; no se debe usar si la política del equipo no lo permite. No contiene desbloqueos ni cambios de seguridad. La prueba de instalación, actualización y desinstalación en un equipo de destino sigue siendo un paso distinto de compilar los paquetes.
+
+Verificación del 26/10/2026: Inno Setup 6.7.3 generó el instalador `3.0.0-beta.1` y el empaquetador generó el portable después de completar las pruebas funcionales y WPF. Se verificaron el manifiesto del ZIP y el rechazo de sobrescritura de entregas. No se instaló Ftracker sobre los datos reales durante esa verificación; la prueba de instalación, actualización y desinstalación en otro equipo sigue pendiente. El compilador Inno Setup se obtuvo del proveedor oficial con firma Authenticode válida; eso no firma automáticamente los paquetes de Ftracker.
+
 ## Probar el flujo completo
 
 1. Entra como administrador. En **Usuarios**, crea un usuario con rol **Prefecto**.
@@ -117,7 +151,7 @@ Cada integrante necesita Windows 10/11, Git y el **SDK de .NET 10** (el runtime 
 
 Después de clonar y abrir la carpeta, puede hacer doble clic en **Preparar-Ftracker.cmd**: restaura paquetes, compila y abre la versión Debug recién construida. La primera restauración necesita internet. También puede usar los tres comandos de Desarrollo. Después de modificar código, usar `dotnet run` o Preparar para ejecutar los cambios; Iniciar puede abrir una publicación anterior si aún no se ha vuelto a publicar.
 
-Subir a Git: `src` (incluidos los recursos del logo), `tests`, `scripts`, `Ftracker.sln`, `NuGet.config`, `global.json`, scripts CMD, `.gitignore`, `.gitattributes`, `.editorconfig` y documentación. `.gitignore` excluye binarios de compilación, paquetes descargados, bases y logs. No subir bases locales, evidencias reales, contraseñas ni configuración privada. Si alguno ya fue agregado a Git, ignorarlo no lo retira automáticamente del historial.
+Subir a Git: `src` (incluidos los recursos del logo), `tests`, `scripts`, `tools`, `installer`, `Ftracker.sln`, `NuGet.config`, `global.json`, scripts CMD, `.gitignore`, `.gitattributes`, `.editorconfig` y documentación. `.gitignore` excluye binarios de compilación, entregas `dist`, paquetes descargados, bases y logs. No subir bases locales, evidencias reales, contraseñas ni configuración privada. Si alguno ya fue agregado a Git, ignorarlo no lo retira automáticamente del historial.
 
 **Git comparte código, no datos de operación.** Cada integrante crea su administrador y tiene su propia base local. Los usuarios, rutas y rondines de una computadora no aparecen automáticamente en las otras. Para entregar la aplicación a alguien que solo la usará, compartir un ZIP de toda la carpeta publicada, por fuera del código fuente o como archivo de una entrega.
 
@@ -181,4 +215,4 @@ Se retiró el código fuente del proyecto ASP.NET Core y se sustituyó por Deskt
 
 Incluye alta, edición y activación/desactivación de usuarios, rutas con edición de puntos (agregar, renombrar, reordenar), verificación opcional por código/QR, croquis interactivo, asignación, reasignación, cancelación, ejecución, cierre, alertas de atraso, incidencias desde tabla y croquis, evidencias, reportes CSV, respaldo/restauración, cambio y restablecimiento de contraseña y bitácora.
 
-Aún faltan: operación compartida entre varios equipos (cada PC tiene su propia base; haría falta un servidor o sincronización), reportes en Excel/PDF nativos, filtros avanzados en pantalla, eliminar o desactivar puntos individuales, bloqueo por intentos fallidos de acceso y cierre de sesión por inactividad, cifrado de la base y los respaldos, y un instalador. La creación automática del esquema y las actualizaciones aditivas de columnas sirven para esta beta; otros cambios futuros de estructura requerirán migraciones.
+Aún faltan: operación compartida entre varios equipos (cada PC tiene su propia base; haría falta un servidor o sincronización), reportes en Excel/PDF nativos, filtros avanzados en pantalla, eliminar o desactivar puntos individuales, bloqueo por intentos fallidos de acceso y cierre de sesión por inactividad, cifrado de la base y los respaldos, firma de distribución y validación del instalador en un equipo de destino. El proyecto incluye la receta de instalación Inno Setup y el empaquetado portable; generar el instalador EXE requiere el compilador. La creación automática del esquema y las actualizaciones aditivas de columnas sirven para esta beta; otros cambios futuros de estructura requerirán migraciones.

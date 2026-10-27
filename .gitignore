@@ -3,6 +3,7 @@
 .dotnet-cli/
 .nuget-packages/
 artifacts/
+dist/
 *.db
 *.db-shm
 *.db-wal

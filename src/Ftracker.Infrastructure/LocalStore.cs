@@ -81,6 +81,15 @@ public sealed partial class LocalStore
         await using var db = Open();
         var normalized = email.Trim().ToLowerInvariant();
         var user = await db.Users.SingleOrDefaultAsync(x => x.Email == normalized);
+        if (user is null)
+        {
+            // Names are not unique. Never select an arbitrary account (or one by its password).
+            // Compare in .NET so accented names also support case-insensitive matching on SQLite.
+            var names = await db.Users.AsNoTracking().Select(x => new { x.Id, x.NombreCompleto }).ToListAsync();
+            var matches = names.Where(x => string.Equals(x.NombreCompleto.Trim(), email.Trim(), StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
+            if (matches.Count > 1) throw new ReglaNegocioException("Para entrar con este nombre utiliza tu correo registrado.");
+            if (matches.Count == 1) user = await db.Users.SingleOrDefaultAsync(x => x.Id == matches[0].Id);
+        }
         if (user is null || !user.Activo || !Verify(password, user.PasswordHash)) throw new ReglaNegocioException("Correo o contraseña incorrectos, o cuenta desactivada.");
         Session.SignIn(user);
     }

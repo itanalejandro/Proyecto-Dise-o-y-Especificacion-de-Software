@@ -104,9 +104,47 @@ await CheckDeletion(store, evidencePath);
 await CheckNewFeatures(store, directory);
 await using (var db = store.Open()) { Check(await db.Rondines.AnyAsync(x => x.Id == roundId && x.Estado == RondinEstado.Cerrado), "Rondín cerrado persistido"); Check(await db.Auditorias.CountAsync() >= 8, "Auditoría persistida"); var prefect = await db.Users.SingleAsync(x => x.Email == "prefecto@example.com"); await store.ToggleUserAsync(prefect.Id); }
 await Reject(() => store.LoginAsync("prefecto@example.com", "PrefectoLocal123!"), "Usuario desactivado bloqueado");
+await CheckLoginAliases();
 Console.WriteLine("PRUEBAS COMPLETADAS. Base aislada: " + directory);
 static void Check(bool value, string title) { if (!value) throw new Exception(title); Console.WriteLine("OK: " + title); }
 static async Task Reject(Func<Task> action, string title) { try { await action(); } catch (ReglaNegocioException) { Console.WriteLine("OK: " + title); return; } throw new Exception("No bloqueó: " + title); }
+
+static async Task CheckLoginAliases()
+{
+    var local = new LocalStore(Path.Combine(Path.GetTempPath(), "Ftracker-login-" + Guid.NewGuid()));
+    await local.InitializeAsync();
+    await using (var db = local.Open()) Check(!await db.Users.AnyAsync(), "Inicialización no crea cuentas de soporte ni administradores ocultos");
+    await local.SetupAsync("Administrador de alias", "admin.alias@example.com", "AdministradorPrueba123!");
+    await local.LoginAsync("ADMIN.ALIAS@EXAMPLE.COM", "AdministradorPrueba123!");
+    await local.AddUserAsync("Ángel Prueba", "angel@example.com", "PrimeraPrueba123!", Roles.Prefecto);
+    await local.AddUserAsync("Guardia Compartido", "guardia1@example.com", "GuardiaUnoPrueba123!", Roles.Prefecto);
+    await local.AddUserAsync("Guardia Compartido", "guardia2@example.com", "GuardiaDosPrueba123!", Roles.Prefecto);
+    await local.AddUserAsync("angel@example.com", "alias.correo@example.com", "OtroCorreoPrueba123!", Roles.Prefecto);
+    // This is an ordinary user-owned account, not a privileged or protected system identity.
+    await local.AddUserAsync("soporte", "asistencia@example.com", "AsistenciaPropia123!", Roles.Prefecto);
+    await local.InitializeAsync();
+    await local.LoginAsync("  áNGEL PRUEBA  ", "PrimeraPrueba123!");
+    Check(local.Session.User?.Email == "angel@example.com", "Nombre único admite mayúsculas y acentos sin depender de LOWER de SQLite");
+    await local.LoginAsync("angel@example.com", "PrimeraPrueba123!");
+    Check(local.Session.User?.NombreCompleto == "Ángel Prueba", "Correo único tiene prioridad frente a otro nombre coincidente");
+    await Reject(() => local.LoginAsync("Guardia Compartido", "GuardiaUnoPrueba123!"), "Nombre duplicado exige correo sin fallar con excepción de consulta");
+    Check(local.Session.UserId is null, "Nombre ambiguo no deja una sesión anterior activa");
+    await local.LoginAsync("GUARDIA1@EXAMPLE.COM", "GuardiaUnoPrueba123!");
+    Check(local.Session.User?.Email == "guardia1@example.com", "Primera cuenta con nombre repetido accede con su correo");
+    await local.LoginAsync("guardia2@example.com", "GuardiaDosPrueba123!");
+    Check(local.Session.User?.Email == "guardia2@example.com", "Segunda cuenta con nombre repetido accede con su correo");
+    await Reject(() => local.LoginAsync("nombre inexistente", "PrimeraPrueba123!"), "Alias desconocido informa error controlado");
+    await Reject(() => local.LoginAsync("Ángel Prueba", "incorrecta"), "Alias no evita comprobar la contraseña");
+    await local.LoginAsync("soporte", "AsistenciaPropia123!");
+    Check(local.Session.Role == Roles.Prefecto, "Nombre soporte no recibe privilegios especiales al inicializar");
+    await local.ChangeOwnPasswordAsync("AsistenciaPropia123!", "AsistenciaNueva123!");
+    await local.LoginAsync("admin.alias@example.com", "AdministradorPrueba123!");
+    string id;
+    await using (var db = local.Open()) id = (await db.Users.SingleAsync(x => x.Email == "asistencia@example.com")).Id;
+    await local.ToggleUserAsync(id);
+    await local.InitializeAsync();
+    await Reject(() => local.LoginAsync("soporte", "AsistenciaNueva123!"), "Inicialización no reactiva ni restablece cuentas desactivadas");
+}
 
 static async Task CheckRoundManagement(LocalStore store, Guid routeId, Guid closedId, string evidencePath)
 {
