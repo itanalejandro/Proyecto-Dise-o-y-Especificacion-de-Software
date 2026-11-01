@@ -16,7 +16,7 @@ public sealed partial class MainWindow : Window
     private readonly TabControl tabs = new();
     private readonly DataGrid users = Table(("Nombre", "Nombre"), ("Correo", "Correo"), ("Rol", "Rol"), ("Activo", "Activo"));
     private readonly DataGrid routes = Table(("Ruta", "Nombre"), ("Puntos", "Puntos"), ("Activa", "Activa"));
-    private readonly DataGrid rounds = Table(("Ruta", "Ruta"), ("Prefecto", "Prefecto"), ("Programado", "Programado"), ("Estado", "Estado"), ("Cerrado el", "CerradoEl"), ("Alerta", "Alerta"));
+    private readonly DataGrid rounds = Table(("Ruta", "Ruta"), ("Prefecto", "Prefecto"), ("Programado", "Programado"), ("Estado", "Estado"), ("Cerrado el", "CerradoEl"), ("Firmas", "HojaFirmas"), ("Alerta", "Alerta"));
     private readonly DataGrid points = Table(("Punto", "Nombre"), ("Resultado", "Resultado"), ("Observación", "Observaciones"), ("Código", "Verificacion"));
     private readonly DataGrid incidents = Table(("Ruta", "Ruta"), ("Tipo", "Tipo"), ("Descripción", "Descripcion"), ("Prioridad", "Prioridad"), ("Estado", "Estado"), ("Evidencias", "Archivos"));
     private readonly TextBlock status = new() { Margin = new Thickness(0, 10, 0, 0), TextWrapping = TextWrapping.Wrap };
@@ -64,6 +64,7 @@ public sealed partial class MainWindow : Window
             management.Children.Add(DangerButton("Eliminar rondín", DeleteRound, () => rounds.SelectedItem is RoundRow));
         }
         management.Children.Add(ActionButton("Ver croquis", ShowRoundCroquis, () => rounds.SelectedItem is RoundRow));
+        management.Children.Add(ActionButton("Ver hoja de firmas", ShowClosurePhoto, () => rounds.SelectedItem is RoundRow { TieneHojaFirmas: true }));
         AddSearch(panel, rounds, "Buscar por ruta, prefecto o estado");
         rounds.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Rounds))); rounds.Height = vm.IsAdmin ? 350 : 200; AddTable(panel, rounds, vm.IsAdmin ? "Todavía no hay rondines. Crea una ruta y un prefecto para asignar el primero." : "Aún no tienes rondines asignados. Consulta con tu administrador.");
         if (!vm.IsAdmin)
@@ -212,7 +213,7 @@ public sealed partial class MainWindow : Window
     {
         var r = Selected<RoundRow>(rounds);
         var warning = r.Estado == RondinEstado.EnCurso ? "\n\nATENCIÓN: el rondín está en curso; el prefecto perderá su avance." : "";
-        if (!Confirm($"¿Eliminar definitivamente el rondín de {r.Ruta} asignado a {r.Prefecto} ({FriendlyValueConverter.Label(r.Programado)})?\n\nSe borrarán también sus puntos registrados, incidencias y archivos de evidencia. Esta acción no se puede deshacer. Si solo quieres detenerlo conservando el historial, usa Cancelar rondín.{warning}", destructive: true)) return;
+        if (!Confirm($"¿Eliminar definitivamente el rondín de {r.Ruta} asignado a {r.Prefecto} ({FriendlyValueConverter.Label(r.Programado)})?\n\nSe borrarán también sus puntos registrados, incidencias, archivos de evidencia y la fotografía de la hoja de firmas. Esta acción no se puede deshacer. Si solo quieres detenerlo conservando el historial, usa Cancelar rondín.{warning}", destructive: true)) return;
         await store.DeleteRoundAsync(r.Id); await Refresh(); status.Text = "Rondín eliminado.";
     }
     private async Task ShowRoute()
@@ -279,8 +280,21 @@ public sealed partial class MainWindow : Window
     }
     private async Task CloseRound()
     {
-        var r = Selected<RoundRow>(rounds); var d = new Editor(this, "Cerrar rondín"); d.Label("Al cerrar este recorrido ya no podrás cambiar sus puntos. Revisa tus registros antes de continuar."); var notes = d.Text("Observaciones finales (opcional)");
-        if (d.Save(async () => { await using var db = store.Open(); await new RondinService(db, store.Session).CerrarAsync(r.Id, notes.Text, store.Session.UserId!); })) await Refresh();
+        var r = Selected<RoundRow>(rounds); var d = new Editor(this, "Cerrar rondín");
+        d.Label($"{r.Ruta} · {r.Programado:dd/MM/yyyy HH:mm}. Adjunta la hoja de firmas de este recorrido. Al cerrar ya no podrás cambiar sus puntos ni sustituir la fotografía.");
+        var photo = new ClosurePhotoPicker(d); d.Element(photo);
+        var notes = d.Text("Observaciones finales (opcional)");
+        if (d.Save(async () =>
+        {
+            if (photo.Photo is null) throw new ReglaNegocioException("Selecciona y revisa la fotografía de la hoja de firmas antes de cerrar.");
+            await using var db = store.Open(); await new RondinService(db, store.Session).CerrarAsync(r.Id, notes.Text, store.Session.UserId!, photo.Photo);
+        }, "Cerrar con fotografía")) await Refresh();
+    }
+    private async Task ShowClosurePhoto()
+    {
+        var r = Selected<RoundRow>(rounds);
+        var viewer = await EvidenceWindow.CreateClosureAsync(store, r.Id, $"{r.Ruta} · {r.Prefecto} · Programado: {r.Programado:dd/MM/yyyy HH:mm}");
+        viewer.Owner = this; viewer.ShowDialog();
     }
     private async Task Report()
     {
@@ -395,17 +409,18 @@ public sealed partial class MainWindow : Window
 internal sealed class Editor : Window
 {
     private readonly StackPanel panel = new() { Margin = new Thickness(22) };
-    private readonly List<Control> fields = [];
+    private readonly List<UIElement> fields = [];
     private bool saving;
     public Editor(Window owner, string title)
     {
         Owner = owner; Title = title; Style = (Style)FindResource(typeof(Window)); Width = 560; SizeToContent = SizeToContent.Height; MaxHeight = Math.Min(780, SystemParameters.WorkArea.Height - 30); WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Content = new ScrollViewer { Content = new Border { Background = ThemeManager.Get("Surface"), Margin = new Thickness(12), CornerRadius = new CornerRadius(10), Child = panel }, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         panel.Children.Add(new TextBlock { Text = title, FontSize = 23, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 20) });
-        Loaded += (_, _) => fields.FirstOrDefault()?.Focus();
+        Loaded += (_, _) => fields.FirstOrDefault(x => x.Focusable)?.Focus();
         Closing += (_, e) => { if (saving) e.Cancel = true; };
     }
     public void Label(string text) => panel.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 2) });
+    public void Element(UIElement element) { panel.Children.Add(element); fields.Add(element); }
     public TextBox Text(string label, string initial = "", bool multiline = false) { Label(label); var box = new TextBox { Text = initial, AcceptsReturn = multiline, Height = multiline ? 110 : double.NaN, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = multiline ? ScrollBarVisibility.Auto : ScrollBarVisibility.Disabled }; AddField(box, label); return box; }
     public DatePicker Date(string label, DateTime? initial = null) { Label(label); var date = new DatePicker { SelectedDate = initial, Language = System.Windows.Markup.XmlLanguage.GetLanguage("es-MX"), SelectedDateFormat = DatePickerFormat.Short }; AddField(date, label); return date; }
     public PasswordBox Password(string label) { Label(label); var box = new PasswordBox(); AddField(box, label); return box; }

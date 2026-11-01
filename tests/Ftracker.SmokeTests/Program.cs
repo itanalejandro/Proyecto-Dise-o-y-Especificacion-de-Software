@@ -86,8 +86,24 @@ await using (var db = store.Open())
 {
     var list = await db.RegistrosPunto.Where(x => x.RondinId == roundId).ToListAsync(); var service = new RondinService(db, store.Session);
     foreach (var p in list) await service.MarcarPuntoAsync(roundId, p.Id, new(RegistroResultado.Completado, "Correcto"), store.Session.UserId!);
-    await service.CerrarAsync(roundId, "Fin", store.Session.UserId!);
+    await Reject(() => service.CerrarAsync(roundId, "Fin", store.Session.UserId!), "Cierre sin fotografía bloqueado aunque todos los puntos estén registrados");
+    await Reject(() => service.CerrarAsync(roundId, "Fin", store.Session.UserId!, new("firmas.pdf", originalEvidenceBytes)), "PDF no sustituye la fotografía de firmas");
+    await Reject(() => service.CerrarAsync(roundId, "Fin", store.Session.UserId!, new("firmas.png", [137,80,78,71,13,10,26,10])), "Cabecera sin imagen no permite cerrar");
+    await Reject(() => service.CerrarAsync(roundId, "Fin", store.Session.UserId!, new("firmas.png", [])), "Fotografía vacía no permite cerrar");
+    await Reject(() => service.CerrarAsync(roundId, "Fin", store.Session.UserId!, new("firmas.png", new byte[5 * 1024 * 1024 + 1])), "Fotografía demasiado grande no permite cerrar");
+    Check((await db.Rondines.SingleAsync(x => x.Id == roundId)).Estado == RondinEstado.EnCurso && !await db.EvidenciasCierre.AnyAsync(), "Validaciones fallidas no cierran ni dejan fotografías parciales");
+    var photo = ClosureFixture();
+    await service.CerrarAsync(roundId, "Fin", store.Session.UserId!, photo);
+    photo.Contenido[0] = 0; // Caller cannot mutate the saved original.
 }
+Check((await store.ReadClosureEvidenceAsync(roundId)).SequenceEqual(ClosureFixture().Contenido), "Hoja de firmas conserva los bytes originales al cerrar");
+await Reject(async () => { await using var db = store.Open(); await new RondinService(db, store.Session).CerrarAsync(roundId, null, store.Session.UserId!, ClosureFixture()); }, "No sustituye una fotografía de un rondín ya cerrado");
+store.Session.SignOut();
+await Reject(async () => { await store.ReadClosureEvidenceAsync(roundId); }, "Sin sesión no consulta hoja de firmas");
+await store.LoginAsync("otro@example.com", "OtroPrefecto123!");
+await Reject(async () => { await store.GetClosureEvidenceAsync(roundId); }, "Otro prefecto no consulta metadatos de firmas ajenas");
+await Reject(async () => { await store.ReadClosureEvidenceAsync(roundId); }, "Otro prefecto no consulta fotografía de firmas ajena");
+store.Session.SignOut(); await store.LoginAsync("prefecto@example.com", "PrefectoLocal123!");
 var closedMap = await store.GetRoundCroquisAsync(roundId);
 Check(!closedMap.PuedeRegistrar && closedMap.Puntos.All(x => x.Resultado == RegistroResultado.Completado), "Croquis cerrado es consulta y refleja resultados");
 await using (var first = store.Open())
@@ -99,15 +115,66 @@ await using (var second = store.Open())
 store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
 await using (var db = store.Open()) { var svc = new IncidenciaService(db, store.Session); await svc.CambiarEstadoAsync(incidentId, new(IncidenciaEstado.EnRevision, "Revisando"), store.Session.UserId!); await svc.CambiarEstadoAsync(incidentId, new(IncidenciaEstado.Resuelta, "Reparado"), store.Session.UserId!); }
 Check((await store.GetEvidenceAsync(incidentId)).Count == 1 && (await store.ReadEvidenceAsync(attachments[0].Id)).Length > 0, "Administrador consulta evidencia de rondín cerrado");
+var signatureInfo = await store.GetClosureEvidenceAsync(roundId);
+Check(signatureInfo is { NombreOriginal: "hoja-firmas.png", Autor: "Prefecto" } && signatureInfo.Sha256.Length == 64 &&
+    (await store.ReadClosureEvidenceAsync(roundId)).SequenceEqual(ClosureFixture().Contenido), "Administrador consulta original, autor, fecha y hash de la hoja de firmas");
+await using (var db = store.Open()) { var photo = await db.EvidenciasCierre.SingleAsync(x => x.RondinId == roundId); photo.Contenido = [1,2,3]; await db.SaveChangesAsync(); }
+await Reject(async () => { await store.ReadClosureEvidenceAsync(roundId); }, "Alteración del original guardado se detecta antes de visualizar");
+await using (var db = store.Open()) { var photo = await db.EvidenciasCierre.SingleAsync(x => x.RondinId == roundId); photo.Contenido = ClosureFixture().Contenido; await db.SaveChangesAsync(); }
 await CheckRoundManagement(store, routeId, roundId, evidencePath);
 await CheckDeletion(store, evidencePath);
 await CheckNewFeatures(store, directory);
 await using (var db = store.Open()) { Check(await db.Rondines.AnyAsync(x => x.Id == roundId && x.Estado == RondinEstado.Cerrado), "Rondín cerrado persistido"); Check(await db.Auditorias.CountAsync() >= 8, "Auditoría persistida"); var prefect = await db.Users.SingleAsync(x => x.Email == "prefecto@example.com"); await store.ToggleUserAsync(prefect.Id); }
 await Reject(() => store.LoginAsync("prefecto@example.com", "PrefectoLocal123!"), "Usuario desactivado bloqueado");
 await CheckLoginAliases();
+await CheckClosureUpgrade();
 Console.WriteLine("PRUEBAS COMPLETADAS. Base aislada: " + directory);
 static void Check(bool value, string title) { if (!value) throw new Exception(title); Console.WriteLine("OK: " + title); }
 static async Task Reject(Func<Task> action, string title) { try { await action(); } catch (ReglaNegocioException) { Console.WriteLine("OK: " + title); return; } throw new Exception("No bloqueó: " + title); }
+static FotoCierreCommand ClosureFixture() => new("hoja-firmas.png", Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC"));
+
+static async Task CheckClosureUpgrade()
+{
+    var local = new LocalStore(Path.Combine(Path.GetTempPath(), "Ftracker-cierre-upgrade-" + Guid.NewGuid()));
+    await local.InitializeAsync(); await local.SetupAsync("Administrador", "admin@example.com", "Administrador123!");
+    await local.LoginAsync("admin@example.com", "Administrador123!");
+    await local.AddUserAsync("Prefecto", "prefecto@example.com", "Prefecto12345!", Roles.Prefecto);
+    await local.AddRouteAsync("Ruta histórica", "", "Entrada");
+    Guid id;
+    await using (var db = local.Open())
+    {
+        var route = await db.Rutas.SingleAsync(); var user = await db.Users.SingleAsync(x => x.Rol == Roles.Prefecto);
+        var legacy = new Rondin { RutaId = route.Id, PrefectoId = user.Id, Estado = RondinEstado.Cerrado, CerradoEn = DateTime.UtcNow };
+        id = legacy.Id; db.Rondines.Add(legacy); await db.SaveChangesAsync();
+        await db.Database.ExecuteSqlRawAsync("DROP TABLE EvidenciasCierre");
+    }
+    await local.InitializeAsync(); await local.InitializeAsync();
+    Check(await local.GetClosureEvidenceAsync(id) is null, "Actualización idempotente conserva cierres antiguos sin inventar fotografías");
+    await using (var db = local.Open()) Check((await db.Rondines.SingleAsync()).Estado == RondinEstado.Cerrado && await db.Users.CountAsync() == 2, "Actualización de esquema conserva estado y cuentas existentes");
+    // Reproduce a cancellation racing with a close: neither a photo nor a partial close may commit.
+    Guid current; string prefect;
+    await using (var db = local.Open())
+    {
+        prefect = await db.Users.Where(x => x.Rol == Roles.Prefecto).Select(x => x.Id).SingleAsync();
+        current = (await new RondinService(db, local.Session).CrearAsync(new((await db.Rutas.SingleAsync()).Id, prefect, DateTime.UtcNow, null), local.Session.UserId!)).Id;
+    }
+    await local.LoginAsync("prefecto@example.com", "Prefecto12345!");
+    await using (var db = local.Open())
+    {
+        var service = new RondinService(db, local.Session); var started = await service.IniciarAsync(current, prefect);
+        await service.MarcarPuntoAsync(current, started.Registros.Single().Id, new(RegistroResultado.Completado, null), prefect);
+    }
+    await using (var stale = local.Open())
+    {
+        await stale.Rondines.Include(x => x.Registros).SingleAsync(x => x.Id == current);
+        var manager = new LocalStore(local.DataDirectory); await manager.LoginAsync("admin@example.com", "Administrador123!");
+        await using (var db = manager.Open()) await new RondinService(db, manager.Session).CancelarAsync(current, "Cancelación concurrente", manager.Session.UserId!);
+        try { await new RondinService(stale, local.Session).CerrarAsync(current, null, prefect, ClosureFixture()); throw new Exception("Cierre sobre cancelación concurrente"); }
+        catch (DbUpdateConcurrencyException) { Console.WriteLine("OK: conflicto de cierre concurrente detectado"); }
+    }
+    await using (var db = local.Open()) Check((await db.Rondines.SingleAsync(x => x.Id == current)).Estado == RondinEstado.Cancelado &&
+        !await db.EvidenciasCierre.AnyAsync(x => x.RondinId == current) && !await db.Auditorias.AnyAsync(x => x.EntidadId == current.ToString() && x.Accion == "Cerrar"), "Conflicto revierte fotografía, cierre y auditoría juntos");
+}
 
 static async Task CheckLoginAliases()
 {
@@ -266,12 +333,20 @@ static async Task CheckDeletion(LocalStore store, string evidencePath)
     await store.SaveEvidenceAsync(incidentId, evidencePath);
     var evidenceFile = (await store.GetEvidenceAsync(incidentId))[0].RutaArchivo;
     Check(File.Exists(evidenceFile), "Evidencia de prueba guardada antes de eliminar");
+    await using (var db = store.Open())
+    {
+        var service = new RondinService(db, store.Session);
+        foreach (var p in await db.RegistrosPunto.Where(x => x.RondinId == roundId).ToListAsync())
+            await service.MarcarPuntoAsync(roundId, p.Id, new(RegistroResultado.Completado, null), store.Session.UserId!);
+        await service.CerrarAsync(roundId, null, store.Session.UserId!, ClosureFixture());
+    }
     store.Session.SignOut(); await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
     await store.DeleteRoundAsync(roundId);
     await using (var db = store.Open())
     {
         Check(!await db.Rondines.AnyAsync(x => x.Id == roundId) && !await db.RegistrosPunto.AnyAsync(x => x.RondinId == roundId) &&
             !await db.Incidencias.AnyAsync(x => x.Id == incidentId) && !await db.Evidencias.AnyAsync(x => x.IncidenciaId == incidentId), "Eliminar rondín borra puntos, incidencias y evidencias");
+        Check(!await db.EvidenciasCierre.AnyAsync(x => x.RondinId == roundId), "Eliminar rondín borra también la hoja de firmas sin dejar originales huérfanos");
         Check(await db.Auditorias.AnyAsync(x => x.EntidadId == roundId.ToString() && x.Accion == "EliminarRondin"), "Eliminar rondín queda en bitácora");
         Check(await db.Rutas.AnyAsync(x => x.Id == routeId) && await db.Users.AnyAsync(x => x.Id == userId), "Eliminar rondín conserva ruta y prefecto");
     }
@@ -387,4 +462,5 @@ static async Task CheckNewFeatures(LocalStore store, string directory)
             await db.Auditorias.AnyAsync(x => x.Accion == "RestaurarRespaldo"), "Restaurar devuelve el estado del respaldo y lo audita");
     Check(Directory.EnumerateFiles(Path.Combine(directory, "respaldos"), "antes-de-restaurar-*.zip").Any(), "Restaurar guarda un respaldo de seguridad previo");
     await using (var db = store.Open()) Check((await store.ReadEvidenceAsync((await db.Evidencias.FirstAsync()).Id)).Length > 0, "Las evidencias siguen legibles tras restaurar");
+    await using (var db = store.Open()) Check((await store.ReadClosureEvidenceAsync(await db.EvidenciasCierre.Select(x => x.RondinId).FirstAsync())).SequenceEqual(ClosureFixture().Contenido), "Respaldo y restauración conservan el original de la hoja de firmas");
 }

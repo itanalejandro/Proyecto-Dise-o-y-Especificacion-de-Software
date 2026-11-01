@@ -46,6 +46,19 @@ public sealed class Rondin : EntidadAuditable
     public string? Observaciones { get; set; }
     public ICollection<RegistroPunto> Registros { get; set; } = new List<RegistroPunto>();
     public ICollection<Incidencia> Incidencias { get; set; } = new List<Incidencia>();
+    public EvidenciaCierre? EvidenciaCierre { get; set; }
+}
+
+/// <summary>Original de la hoja de firmas, guardado junto con el cierre en la misma transacción.</summary>
+public sealed class EvidenciaCierre : EntidadAuditable
+{
+    public Guid RondinId { get; set; }
+    public Rondin Rondin { get; set; } = null!;
+    public string NombreOriginal { get; set; } = string.Empty;
+    public string TipoMime { get; set; } = string.Empty;
+    public byte[] Contenido { get; set; } = [];
+    public string Sha256 { get; set; } = string.Empty;
+    public DateTime SubidaEn { get; set; } = DateTime.UtcNow;
 }
 
 public sealed class RegistroPunto : EntidadAuditable

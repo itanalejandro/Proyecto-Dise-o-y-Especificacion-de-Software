@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
-internal sealed record Options(string Version = "3.0.0-beta.1", bool PortableOnly = false, bool SkipTests = false, string? Iscc = null);
+internal sealed record Options(string Version = "3.0.0-beta.2", bool PortableOnly = false, bool SkipTests = false, string? Iscc = null);
 
 internal static class Program
 {
@@ -17,7 +17,7 @@ internal static class Program
         {
             if (args.Any(x => x is "--help" or "-h" or "-?"))
             {
-                Console.WriteLine("Ftracker.Packaging: [--version 3.0.0-beta.1] [--portable-only] [--skip-tests] [--iscc ruta] | --self-test");
+                Console.WriteLine("Ftracker.Packaging: [--version 3.0.0-beta.2] [--portable-only] [--skip-tests] [--iscc ruta] | --self-test");
                 Console.WriteLine("Necesita SDK .NET 10; el instalador EXE requiere Inno Setup 6.3 o posterior. No cambia politicas ni certificados.");
                 return 0;
             }

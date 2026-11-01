@@ -22,6 +22,7 @@ public sealed class FtrackerDbContext(DbContextOptions<FtrackerDbContext> option
     public DbSet<RegistroPunto> RegistrosPunto => Set<RegistroPunto>();
     public DbSet<Incidencia> Incidencias => Set<Incidencia>();
     public DbSet<Evidencia> Evidencias => Set<Evidencia>();
+    public DbSet<EvidenciaCierre> EvidenciasCierre => Set<EvidenciaCierre>();
     public DbSet<Auditoria> Auditorias => Set<Auditoria>();
     public DbSet<UbicacionCroquis> UbicacionesCroquis => Set<UbicacionCroquis>();
 
@@ -37,6 +38,14 @@ public sealed class FtrackerDbContext(DbContextOptions<FtrackerDbContext> option
         b.Entity<RegistroPunto>(e => { e.HasIndex(x => new { x.RondinId, x.PuntoControlId }).IsUnique(); e.HasOne(x => x.Rondin).WithMany(x => x.Registros).HasForeignKey(x => x.RondinId).OnDelete(DeleteBehavior.Cascade); });
         b.Entity<Incidencia>(e => { e.Property(x => x.Tipo).HasMaxLength(80).IsRequired(); e.HasIndex(x => new { x.Estado, x.Prioridad, x.CreadoEn }); e.HasOne(x => x.Rondin).WithMany(x => x.Incidencias).HasForeignKey(x => x.RondinId).OnDelete(DeleteBehavior.Restrict); });
         b.Entity<Evidencia>(e => { e.HasOne(x => x.Incidencia).WithMany(x => x.Evidencias).HasForeignKey(x => x.IncidenciaId).OnDelete(DeleteBehavior.Cascade); });
+        b.Entity<EvidenciaCierre>(e =>
+        {
+            e.HasOne(x => x.Rondin).WithOne(x => x.EvidenciaCierre).HasForeignKey<EvidenciaCierre>(x => x.RondinId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.NombreOriginal).HasMaxLength(255).IsRequired();
+            e.Property(x => x.TipoMime).IsRequired(); e.Property(x => x.Contenido).IsRequired();
+            e.Property(x => x.Sha256).HasMaxLength(64).IsRequired();
+            e.ToTable("EvidenciasCierre", t => t.HasCheckConstraint("CK_EvidenciasCierre_Tamano", "length(Contenido) > 0 AND length(Contenido) <= 5242880"));
+        });
         b.Entity<Auditoria>(e => { e.Property(x => x.Accion).HasMaxLength(80); e.HasIndex(x => new { x.Entidad, x.EntidadId, x.Fecha }); });
         foreach (var type in b.Model.GetEntityTypes().Where(x => typeof(EntidadAuditable).IsAssignableFrom(x.ClrType)))
             b.Entity(type.ClrType).Property(nameof(EntidadAuditable.RowVersion)).IsConcurrencyToken();

@@ -60,13 +60,18 @@ public sealed class RondinService(FtrackerDbContext db, ISession session) : IRon
         r.ActualizadoEn = DateTime.UtcNow; // Detect a concurrent cancellation before saving a result.
         await Auditar(actorId, "MarcarPunto", "RegistroPunto", registro.Id, c.Resultado.ToString(), ct); await db.SaveChangesAsync(ct); return registro;
     }
-    public async Task<Rondin> CerrarAsync(Guid id, string? observaciones, string actorId, CancellationToken ct = default)
+    public async Task<Rondin> CerrarAsync(Guid id, string? observaciones, string actorId, FotoCierreCommand? fotografia = null, CancellationToken ct = default)
     {
         var r = await db.Rondines.Include(x => x.Registros).SingleOrDefaultAsync(x => x.Id == id, ct) ?? throw new ReglaNegocioException("El rondín no existe.");
         ValidarAsignacion(r, actorId); if (r.Estado != RondinEstado.EnCurso) throw new ReglaNegocioException("Solo puede cerrarse un rondín en curso.");
-        if (r.Registros.Any(x => x.Resultado == RegistroResultado.Pendiente)) throw new ReglaNegocioException("Todos los puntos deben registrarse antes de cerrar.");
+        if (r.Registros.Count == 0 || r.Registros.Any(x => x.Resultado == RegistroResultado.Pendiente)) throw new ReglaNegocioException("Todos los puntos deben registrarse antes de cerrar.");
+        var photo = ClosurePhoto.Create(fotografia);
+        photo.RondinId = id; photo.CreadoPorId = actorId;
+        db.EvidenciasCierre.Add(photo);
         r.Estado = RondinEstado.Cerrado; r.CerradoEn = DateTime.UtcNow; r.Observaciones = observaciones ?? r.Observaciones; r.ActualizadoEn = DateTime.UtcNow;
-        await Auditar(actorId, "Cerrar", "Rondin", r.Id, null, ct); await db.SaveChangesAsync(ct); return r;
+        photo.SubidaEn = r.CerradoEn.Value;
+        await Auditar(actorId, "Cerrar", "Rondin", r.Id, $"Hoja de firmas: {photo.Id}. SHA-256: {photo.Sha256}", ct);
+        await db.SaveChangesAsync(ct); return r;
     }
     public async Task<Rondin> CancelarAsync(Guid id, string motivo, string actorId, CancellationToken ct = default)
     {

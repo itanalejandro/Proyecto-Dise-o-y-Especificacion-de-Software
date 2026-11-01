@@ -8,13 +8,15 @@ public sealed record CrearIncidenciaCommand(Guid RondinId, Guid? PuntoControlId,
 public sealed record CambiarIncidenciaCommand(IncidenciaEstado Estado, string? Comentario);
 public sealed record ReasignarRondinCommand(string PrefectoId, string Motivo);
 public sealed record DashboardDto(int Programados, int EnCurso, int CerradosHoy, int IncidenciasAbiertas);
+public sealed record FotoCierreCommand(string NombreArchivo, byte[] Contenido);
+public sealed record FotoCierreInfo(Guid Id, string NombreOriginal, string TipoMime, DateTime SubidaEn, string Autor, string Sha256);
 
 public interface IRondinService
 {
     Task<Rondin> CrearAsync(CrearRondinCommand command, string actorId, CancellationToken ct = default);
     Task<Rondin> IniciarAsync(Guid rondinId, string actorId, CancellationToken ct = default);
     Task<RegistroPunto> MarcarPuntoAsync(Guid rondinId, Guid registroId, MarcarPuntoCommand command, string actorId, CancellationToken ct = default);
-    Task<Rondin> CerrarAsync(Guid rondinId, string? observaciones, string actorId, CancellationToken ct = default);
+    Task<Rondin> CerrarAsync(Guid rondinId, string? observaciones, string actorId, FotoCierreCommand? fotografia = null, CancellationToken ct = default);
     Task<Rondin> CancelarAsync(Guid rondinId, string motivo, string actorId, CancellationToken ct = default);
     Task<Rondin> ReasignarAsync(Guid rondinId, ReasignarRondinCommand command, string actorId, CancellationToken ct = default);
     Task<IReadOnlyList<Rondin>> MisRondinesAsync(string prefectoId, CancellationToken ct = default);

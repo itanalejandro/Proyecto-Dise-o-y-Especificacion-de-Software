@@ -3,7 +3,7 @@
   #error SourceDir must be provided by tools/Ftracker.Packaging
 #endif
 #ifndef AppVersion
-  #define AppVersion "3.0.0-beta.1"
+  #define AppVersion "3.0.0-beta.2"
 #endif
 #ifndef NumericVersion
   #define NumericVersion "3.0.0.0"

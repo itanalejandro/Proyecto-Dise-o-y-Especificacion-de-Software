@@ -244,12 +244,34 @@ internal static class Program
             await service.IniciarAsync(id, prefectId);
             foreach (var point in await db.RegistrosPunto.Where(x => x.RondinId == id).ToListAsync())
                 await service.MarcarPuntoAsync(id, point.Id, new(RegistroResultado.Completado, null), prefectId);
-            await service.CerrarAsync(id, null, prefectId);
+            await service.CerrarAsync(id, null, prefectId, new FotoCierreCommand("firmas.jpg", await File.ReadAllBytesAsync(Path.Combine(store.DataDirectory, "prueba.jpg"))));
             closing = (await db.Rondines.SingleAsync(x => x.Id == id)).CerradoEn!.Value;
         }
         await vm.RefreshAsync();
         var row = vm.Rounds.Single(x => x.Id == id);
         Check(row.CerradoEn == closing.ToLocalTime() && row.CerradoEl == closing.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), "Tabla muestra fecha y hora local del cierre guardado");
+        Check(row.TieneHojaFirmas && row.HojaFirmas == "Adjunta", "Tabla identifica el cierre con fotografía sin cargar su contenido");
+        var host = new Window(); var picker = new ClosurePhotoPicker(host);
+        Check(picker.Photo is null, "Selector de firmas empieza sin fotografía");
+        Check(await picker.LoadAsync(Path.Combine(store.DataDirectory, "prueba.png")) && picker.Photo is not null && Descendants<Image>(picker).Single().Source is not null, "Selector presenta vista previa antes de cerrar");
+        Check(!await picker.LoadAsync(Path.Combine(store.DataDirectory, "corrupta.png")) && picker.Photo is null, "Imagen dañada borra la selección y no permite cerrar con una anterior por error");
+        Check(await picker.LoadAsync(Path.Combine(store.DataDirectory, "prueba.jpg")), "Selector admite una fotografía JPEG real");
+        var viewer = await EvidenceWindow.CreateClosureAsync(store, id, row.Ruta);
+        viewer.ShowInTaskbar = false; viewer.WindowStartupLocation = WindowStartupLocation.Manual; viewer.Left = -2500; viewer.Top = 0;
+        viewer.Show(); await Until(() => Descendants<Image>(viewer).Single().Source is not null);
+        Check(Descendants<TextBlock>(viewer).Any(x => x.Text == "Hoja de firmas del rondín"), "Visor de firmas usa el original vinculado al rondín");
+        ThemeManager.Apply(true); viewer.UpdateLayout(); SaveImage(viewer, Path.Combine(Environment.CurrentDirectory, "artifacts", "interfaz-hoja-firmas-oscuro.png"));
+        ThemeManager.Apply(false); viewer.UpdateLayout(); SaveImage(viewer, Path.Combine(Environment.CurrentDirectory, "artifacts", "interfaz-hoja-firmas.png"));
+        viewer.Close();
+        await store.LoginAsync("admin@example.com", "PruebaLocal12345!");
+        var management = new MainWindow(store) { ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500, Top = 0 };
+        management.Show(); await Until(() => ((MainViewModel)management.DataContext).Rounds.Any(x => x.Id == id));
+        var tabs = Descendants<TabControl>(management).Single(); tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Rondines"); management.UpdateLayout();
+        var button = Descendants<Button>(management).Single(x => (string?)x.Content == "Ver hoja de firmas");
+        Check(!button.IsEnabled, "Administrador no abre hoja de firmas sin selección");
+        Descendants<DataGrid>(management).Single(x => x.ItemsSource is IReadOnlyList<RoundRow>).SelectedItem = ((MainViewModel)management.DataContext).Rounds.Single(x => x.Id == id);
+        Check(button.IsEnabled, "Administrador puede consultar la hoja de firmas del rondín seleccionado");
+        management.Close();
     }
     private static async Task CheckPointEvidence(MainWindow window, Guid roundId, string previewDir)
     {
@@ -314,19 +336,19 @@ internal static class Program
         SaveImage(viewer, Path.Combine(previewDir, "interfaz-evidencias.png"));
         using (var unlocked = new FileStream(attachments.Single(x => x.NombreOriginal == "prueba.png").RutaArchivo, FileMode.Open, FileAccess.Read, FileShare.None))
             Check(unlocked.Length == originalBytes.Length, "Visor no mantiene bloqueado archivo original");
-        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "prueba.jpg");
+        choice.SelectedItem = choice.Items.Cast<EvidenceFile>().Single(x => x.NombreOriginal == "prueba.jpg");
         await Until(() => choice.IsEnabled && image.Source is not null);
         Check(image.Source is BitmapSource, "Visor muestra JPEG");
-        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "prueba.pdf");
+        choice.SelectedItem = choice.Items.Cast<EvidenceFile>().Single(x => x.NombreOriginal == "prueba.pdf");
         await Until(() => choice.IsEnabled && Descendants<TextBlock>(viewer).Any(x => x.Text.StartsWith("La vista previa de PDF")));
         Check(image.Source is null && !zoom.IsEnabled, "PDF informa exportación sin mostrar imagen anterior");
-        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "corrupta.png");
+        choice.SelectedItem = choice.Items.Cast<EvidenceFile>().Single(x => x.NombreOriginal == "corrupta.png");
         await Until(() => choice.IsEnabled && Descendants<TextBlock>(viewer).Any(x => x.Text.StartsWith("No se pudo mostrar la imagen")));
         Check(image.Source is null, "Imagen dañada informa error sin cerrar visor");
-        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "ausente.png");
+        choice.SelectedItem = choice.Items.Cast<EvidenceFile>().Single(x => x.NombreOriginal == "ausente.png");
         await Until(() => choice.IsEnabled && Descendants<TextBlock>(viewer).Any(x => x.Text.StartsWith("El archivo ya no está disponible")));
         Check(viewer.IsVisible, "Archivo ausente no cierra visor");
-        choice.SelectedItem = choice.Items.Cast<Ftracker.Domain.Evidencia>().Single(x => x.NombreOriginal == "prueba.png");
+        choice.SelectedItem = choice.Items.Cast<EvidenceFile>().Single(x => x.NombreOriginal == "prueba.png");
         await Until(() => choice.IsEnabled && image.Source is not null);
         Check((await File.ReadAllBytesAsync(attachments.Single(x => x.NombreOriginal == "prueba.png").RutaArchivo)).SequenceEqual(originalBytes) &&
             Directory.GetFiles(Path.Combine(store.DataDirectory, "evidencias")).Length == fileCount, "Vista previa no altera archivos ni crea copias");

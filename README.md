@@ -24,13 +24,13 @@ La integración de distribución se basa en el paquete v3 del equipo, sin import
 .\Generar-Instalador.cmd --portable-only
 
 # Para una nueva entrega, utiliza una versión distinta:
-.\Generar-Instalador.cmd --version 3.0.0-beta.2
+.\Generar-Instalador.cmd --version 3.0.0-beta.3
 
 # Comprobaciones internas del empaquetador, sin generar entregas:
 dotnet run --project tools/Ftracker.Packaging -- --self-test
 ```
 
-La versión predeterminada del paquete es `3.0.0-beta.1`. El resultado queda en `dist/Ftracker-Setup-<versión>-win-x64.exe` y `dist/Ftracker-<versión>-win-x64-portable.zip`, con archivos `.sha256` para comprobar su contenido. Si falta el compilador, el modo completo termina con un error claro; `--portable-only` no genera un EXE. `--iscc` permite indicar un compilador existente. Se ejecutan ambos programas de pruebas antes de distribuir; `--skip-tests` los omite expresamente y muestra una advertencia. El generador no sobrescribe entregas existentes: usa otra versión. No borra directorios de publicación anteriores y conserva el staging bajo `artifacts/installer-build` para revisión. Antes de publicar el ZIP comprueba todos sus archivos contra el manifiesto; las sumas de comprobación no sustituyen una firma de confianza.
+La versión predeterminada del paquete es `3.0.0-beta.2`. El resultado queda en `dist/Ftracker-Setup-<versión>-win-x64.exe` y `dist/Ftracker-<versión>-win-x64-portable.zip`, con archivos `.sha256` para comprobar su contenido. Si falta el compilador, el modo completo termina con un error claro; `--portable-only` no genera un EXE. `--iscc` permite indicar un compilador existente. Se ejecutan ambos programas de pruebas antes de distribuir; `--skip-tests` los omite expresamente y muestra una advertencia. El generador no sobrescribe entregas existentes: usa otra versión. No borra directorios de publicación anteriores y conserva el staging bajo `artifacts/installer-build` para revisión. Antes de publicar el ZIP comprueba todos sus archivos contra el manifiesto; las sumas de comprobación no sustituyen una firma de confianza.
 
 El instalador es **por cuenta de Windows**, sin pedir elevación: instala en `%LOCALAPPDATA%\Programs\Ftracker`, añade la entrada de desinstalación y el acceso del menú Inicio; el escritorio es opcional. Cierra Ftracker antes de actualizar o desinstalar: no se fuerza su cierre. Los datos permanecen en `%LOCALAPPDATA%\Ftracker`, fuera del programa, y la desinstalación no incluye una orden para borrarlos. Respaldar antes de actualizar sigue siendo necesario. No se ha validado una actualización de instalaciones antiguas de otros paquetes con configuraciones diferentes.
 
@@ -42,6 +42,8 @@ El lanzador principal funciona sin ejecutar archivos `.ps1` y no modifica la pol
 
 Verificación del 26/10/2026: Inno Setup 6.7.3 generó el instalador `3.0.0-beta.1` y el empaquetador generó el portable después de completar las pruebas funcionales y WPF. Se verificaron el manifiesto del ZIP y el rechazo de sobrescritura de entregas. No se instaló Ftracker sobre los datos reales durante esa verificación; la prueba de instalación, actualización y desinstalación en otro equipo sigue pendiente. El compilador Inno Setup se obtuvo del proveedor oficial con firma Authenticode válida; eso no firma automáticamente los paquetes de Ftracker.
 
+Verificación del 01/11/2026: la versión `3.0.0-beta.2` añade la fotografía obligatoria de cierre. Pasaron SmokeTests y DesktopChecks con datos aislados, incluidos cierre sin foto, autorización de lectura, detección de alteración del original, actualización de bases anteriores, eliminación y recuperación mediante respaldo, reversión de un cierre concurrente con cancelación y visor en ambos temas. Después se generaron instalador y portable con `--skip-tests` para reutilizar esa ejecución ya aprobada; el empaquetador volvió a comprobar sus argumentos y el manifiesto del ZIP. Se comprobaron los `.sha256` y se actualizó `artifacts/Ftracker-actualizado`. No se ejecutó el instalador sobre datos de operación como parte de esa comprobación. Quien use una copia instalada debe actualizarla con el instalador nuevo; cambiar el código o la publicación del proyecto no sustituye esa instalación.
+
 ## Probar el flujo completo
 
 1. Entra como administrador. En **Usuarios**, crea un usuario con rol **Prefecto**.
@@ -51,12 +53,22 @@ Verificación del 26/10/2026: Inno Setup 6.7.3 generó el instalador `3.0.0-beta
 5. Selecciona cada punto para completarlo u omitirlo con justificación.
 6. Con el rondín en curso seleccionado, abre **Incidencias** para reportar. Si seleccionaste un punto, se vincula a ese punto; de lo contrario, al rondín general.
 7. Selecciona la incidencia y pulsa **Adjuntar evidencia**: JPG, PNG o PDF; máximo 5 MB y cinco archivos.
-8. Regresa al rondín y ciérralo cuando todos sus puntos estén registrados.
+8. Regresa al rondín y ciérralo cuando todos sus puntos estén registrados. Adjunta la fotografía obligatoria de la hoja de firmas (JPG/PNG, hasta 5 MB), comprueba la vista previa y confirma **Cerrar con fotografía**.
 9. Entra como administrador, revisa las incidencias y cambia su estado: Abierta → EnRevision → Resuelta → Cerrada. También se permite Abierta → Resuelta.
 
 ### Consultar fecha y hora de cierre
 
 Las tablas **Rondines** (administrador) y **Mis rondines** (prefecto) muestran **Cerrado el** junto a **Estado**, con la fecha y hora local del cierre en formato `dd/MM/yyyy HH:mm`. Usa el dato guardado al cerrar el recorrido, también para rondines anteriores que ya lo tengan registrado. Si no hay fecha de cierre, muestra **—**; cancelar no equivale a cerrar. La columna permite ordenar cronológicamente y la búsqueda incluye la fecha de cierre mostrada.
+
+### Hoja de firmas obligatoria al cerrar
+
+El prefecto debe registrar todos los puntos (completados u omitidos con motivo) y seleccionar una fotografía **JPG o PNG de hasta 5 MB** de la hoja de firmas de ese rondín. El formulario muestra una vista previa antes de confirmar. Cancelar el formulario o no elegir una imagen válida deja el recorrido en curso. La obligación también se verifica en el servicio de negocio; no depende únicamente del botón.
+
+La fotografía original, nombre de archivo, autor, fecha UTC y SHA-256 se guardan en la nueva tabla **EvidenciasCierre** de SQLite, en la misma transacción que el cierre. Así no se confirma un cierre si falla guardar su fotografía. La columna **Firmas** indica **Adjunta**; **Ver hoja de firmas** abre el visor con zoom y exportación para el administrador o el prefecto asignado. No hay reemplazo del original ni aprobación administrativa añadida. El archivo elegido puede borrarse o moverse después: la copia permanece en la base y viaja en los respaldos. No se crea una incidencia ficticia para almacenar la firma.
+
+La validación automática comprueba formato, tamaño y dimensiones; no reconoce las firmas ni garantiza que la imagen sea de la hoja correcta. El administrador debe consultar visualmente el original. El hash detecta discrepancias entre el contenido y el hash guardados, pero no certifica autenticidad ni protege frente a quien pueda editar ambos en la base local.
+
+La inicialización agrega la tabla de forma aditiva e idempotente. Los rondines cerrados antes de esta función conservan su fecha y muestran **Sin evidencia anterior**; no se les inventan fotografías ni se reabren. Los respaldos antiguos se siguen restaurando y reciben la tabla al inicializar. Respaldar antes de actualizar sigue siendo necesario. Eliminar definitivamente un rondín elimina también su hoja de firmas, como advierte la confirmación; cancelar conserva su historial.
 
 ### Reasignar o cancelar recorridos
 
@@ -129,7 +141,7 @@ El texto libre que empieza con `=`, `+`, `-` o `@` se exporta con un apóstrofo 
 
 SQLite usa el componente nativo de Windows `winsqlite3.dll`. No necesita MySQL ni SQL Server.
 
-La base se crea en `%LOCALAPPDATA%\Ftracker\ftracker-desktop.db`; las evidencias, en la subcarpeta `evidencias`. Los datos permanecen al cerrar y volver a abrir. Para respaldar, cierra todas las instancias y copia la carpeta completa. El archivo local no está cifrado: depende de los permisos de la cuenta Windows.
+La base se crea en `%LOCALAPPDATA%\Ftracker\ftracker-desktop.db`; las evidencias de incidencias están en la subcarpeta `evidencias` y las fotografías de cierre se guardan dentro de SQLite. Los datos permanecen al cerrar y volver a abrir. Para respaldar, cierra todas las instancias y copia la carpeta completa, o usa Crear respaldo. El archivo local no está cifrado: depende de los permisos de la cuenta Windows.
 
 La versión de escritorio usa una base nueva; no importa automáticamente usuarios ni datos de la versión web. No se han eliminado bases antiguas.
 
@@ -213,6 +225,6 @@ Se retiró el código fuente del proyecto ASP.NET Core y se sustituyó por Deskt
 
 ## Alcance y pendientes
 
-Incluye alta, edición y activación/desactivación de usuarios, rutas con edición de puntos (agregar, renombrar, reordenar), verificación opcional por código/QR, croquis interactivo, asignación, reasignación, cancelación, ejecución, cierre, alertas de atraso, incidencias desde tabla y croquis, evidencias, reportes CSV, respaldo/restauración, cambio y restablecimiento de contraseña y bitácora.
+Incluye alta, edición y activación/desactivación de usuarios, rutas con edición de puntos (agregar, renombrar, reordenar), verificación opcional por código/QR, croquis interactivo, asignación, reasignación, cancelación, ejecución, cierre con fotografía obligatoria de la hoja de firmas y consulta del original, alertas de atraso, incidencias desde tabla y croquis, evidencias, reportes CSV, respaldo/restauración, cambio y restablecimiento de contraseña y bitácora.
 
 Aún faltan: operación compartida entre varios equipos (cada PC tiene su propia base; haría falta un servidor o sincronización), reportes en Excel/PDF nativos, filtros avanzados en pantalla, eliminar o desactivar puntos individuales, bloqueo por intentos fallidos de acceso y cierre de sesión por inactividad, cifrado de la base y los respaldos, firma de distribución y validación del instalador en un equipo de destino. El proyecto incluye la receta de instalación Inno Setup y el empaquetado portable; generar el instalador EXE requiere el compilador. La creación automática del esquema y las actualizaciones aditivas de columnas sirven para esta beta; otros cambios futuros de estructura requerirán migraciones.

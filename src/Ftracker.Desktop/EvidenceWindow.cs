@@ -10,10 +10,12 @@ using Microsoft.Win32;
 
 namespace Ftracker.Desktop;
 
+internal sealed record EvidenceFile(Guid Id, string NombreOriginal, string TipoMime);
+
 internal sealed class EvidenceWindow : Window
 {
-    private readonly LocalStore store;
-    private readonly ComboBox files = new() { DisplayMemberPath = nameof(Evidencia.NombreOriginal), MinWidth = 260, MaxWidth = 650, HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly Func<Guid, Task<byte[]>> read;
+    private readonly ComboBox files = new() { DisplayMemberPath = nameof(EvidenceFile.NombreOriginal), MinWidth = 260, MaxWidth = 650, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Image image = new() { Stretch = Stretch.Uniform };
     private readonly ScrollViewer viewport = new() { HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalContentAlignment = HorizontalAlignment.Center, VerticalContentAlignment = VerticalAlignment.Center };
     private readonly TextBlock message = new() { TextWrapping = TextWrapping.Wrap, MaxWidth = 600, Margin = new Thickness(24), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
@@ -29,18 +31,26 @@ internal sealed class EvidenceWindow : Window
     {
         var evidence = await store.GetEvidenceAsync(incidentId);
         if (evidence.Count == 0) throw new ReglaNegocioException("Esta incidencia no tiene archivos adjuntos.");
-        return new EvidenceWindow(store, evidence);
+        return new EvidenceWindow(store.ReadEvidenceAsync, evidence.Select(x => new EvidenceFile(x.Id, x.NombreOriginal, x.TipoMime)).ToList());
     }
 
-    private EvidenceWindow(LocalStore store, IReadOnlyList<Evidencia> evidence)
+    public static async Task<EvidenceWindow> CreateClosureAsync(LocalStore store, Guid roundId, string route)
     {
-        this.store = store;
+        var info = await store.GetClosureEvidenceAsync(roundId)
+            ?? throw new ReglaNegocioException("Este rondín no tiene una hoja de firmas adjunta; puede ser un cierre anterior a esta actualización.");
+        return new EvidenceWindow(_ => store.ReadClosureEvidenceAsync(roundId), [new(info.Id, info.NombreOriginal, info.TipoMime)],
+            "Hoja de firmas del rondín", $"{route}\nAdjuntada el {info.SubidaEn.ToLocalTime():dd/MM/yyyy HH:mm} por {info.Autor}.\nOriginal guardado al cerrar. Su contenido requiere revisión visual.");
+    }
+
+    private EvidenceWindow(Func<Guid, Task<byte[]>> read, IReadOnlyList<EvidenceFile> evidence, string heading = "Evidencias de la incidencia", string? detail = null)
+    {
+        this.read = read;
         Title = "Evidencias · Ftracker"; Icon = Brand.Icon; Style = (Style)FindResource(typeof(Window));
         Width = 1000; Height = 740; MinWidth = 700; MinHeight = 500; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var root = new DockPanel { Margin = new Thickness(20) }; Content = root;
         var header = new StackPanel(); DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
-        header.Children.Add(new TextBlock { Text = "Evidencias de la incidencia", FontSize = 24, FontWeight = FontWeights.SemiBold });
-        header.Children.Add(new TextBlock { Text = $"Archivos adjuntos: {evidence.Count}. Selecciona uno para revisarlo.", Margin = new Thickness(0, 6, 0, 6) });
+        header.Children.Add(new TextBlock { Text = heading, FontSize = 24, FontWeight = FontWeights.SemiBold });
+        header.Children.Add(new TextBlock { Text = detail ?? $"Archivos adjuntos: {evidence.Count}. Selecciona uno para revisarlo.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 6) });
         header.Children.Add(files);
         System.Windows.Automation.AutomationProperties.SetName(files, "Archivo de evidencia");
         var tools = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) }; header.Children.Add(tools);
@@ -74,12 +84,12 @@ internal sealed class EvidenceWindow : Window
 
     private async Task LoadSelected()
     {
-        if (busy || files.SelectedItem is not Evidencia selected) return;
+        if (busy || files.SelectedItem is not EvidenceFile selected) return;
         busy = true; image.Source = null; image.Width = image.Height = double.NaN; message.Text = "Cargando archivo…";
         message.Visibility = Visibility.Visible; status.Text = selected.NombreOriginal; UpdateActions();
         try
         {
-            var bytes = await store.ReadEvidenceAsync(selected.Id);
+            var bytes = await read(selected.Id);
             if (closed) return;
             if (selected.TipoMime == "application/pdf")
             {
@@ -102,7 +112,7 @@ internal sealed class EvidenceWindow : Window
         finally { busy = false; if (!closed) UpdateActions(); }
     }
 
-    private static BitmapSource Decode(byte[] bytes)
+    internal static BitmapSource Decode(byte[] bytes)
     {
         using var input = new MemoryStream(bytes, writable: false);
         var decoder = BitmapDecoder.Create(input, BitmapCreateOptions.DelayCreation, BitmapCacheOption.OnDemand);
@@ -130,16 +140,16 @@ internal sealed class EvidenceWindow : Window
     {
         var canZoom = !busy && image.Source is not null;
         zoom.IsEnabled = canZoom; foreach (var button in imageActions) button.IsEnabled = canZoom;
-        export.IsEnabled = !busy && files.SelectedItem is Evidencia; files.IsEnabled = !busy;
+        export.IsEnabled = !busy && files.SelectedItem is EvidenceFile; files.IsEnabled = !busy;
     }
 
     private async Task ExportSelected()
     {
-        if (busy || files.SelectedItem is not Evidencia selected) return;
+        if (busy || files.SelectedItem is not EvidenceFile selected) return;
         var target = new SaveFileDialog { FileName = Path.GetFileName(selected.NombreOriginal), Filter = "Archivo|*.*" };
         if (target.ShowDialog(this) != true) return;
         busy = true; UpdateActions();
-        try { var bytes = await store.ReadEvidenceAsync(selected.Id); await File.WriteAllBytesAsync(target.FileName, bytes); status.Text = "Copia exportada. El archivo original se conserva."; }
+        try { var bytes = await read(selected.Id); await File.WriteAllBytesAsync(target.FileName, bytes); status.Text = "Copia exportada. El archivo original se conserva."; }
         catch (ReglaNegocioException ex) { status.Text = ex.Message; }
         catch (Exception) { status.Text = "No se pudo exportar. Revisa la ubicación de destino y sus permisos."; }
         finally { busy = false; if (!closed) UpdateActions(); }

@@ -8,9 +8,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Ftracker.Desktop;
 public sealed record UserRow(string Id, string Nombre, string Correo, string Rol, bool Activo);
 public sealed record RouteRow(Guid Id, string Nombre, int Puntos, bool Activa);
-public sealed record RoundRow(Guid Id, string Ruta, string Prefecto, DateTime Programado, RondinEstado Estado, DateTime? CerradoEn = null)
+public sealed record RoundRow(Guid Id, string Ruta, string Prefecto, DateTime Programado, RondinEstado Estado, DateTime? CerradoEn = null, bool TieneHojaFirmas = false)
 {
     public string CerradoEl => CerradoEn?.ToString("dd/MM/yyyy HH:mm") ?? "—";
+    public string HojaFirmas => TieneHojaFirmas ? "Adjunta" : Estado == RondinEstado.Cerrado ? "Sin evidencia anterior" : "—";
     /// <summary>Un rondín programado que pasó más de 15 minutos de su hora sin iniciarse.</summary>
     public string Alerta => Estado == RondinEstado.Programado && Programado < DateTime.Now.AddMinutes(-15) ? "Atrasado" : "";
 }
@@ -45,7 +46,9 @@ public sealed class MainViewModel(LocalStore store) : INotifyPropertyChanged
         var rounds = db.Rondines.AsNoTracking().Include(x => x.Ruta).AsQueryable();
         if (!IsAdmin) rounds = rounds.Where(x => x.PrefectoId == store.Session.UserId);
         var users = await db.Users.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.NombreCompleto);
-        Rounds = (await rounds.OrderByDescending(x => x.ProgramadoPara).ToListAsync()).Select(x => new RoundRow(x.Id, x.Ruta.Nombre, users.GetValueOrDefault(x.PrefectoId, "Usuario"), x.ProgramadoPara.ToLocalTime(), x.Estado, x.CerradoEn?.ToLocalTime())).ToList();
+        var loaded = await rounds.OrderByDescending(x => x.ProgramadoPara)
+            .Select(x => new { Round = x, HasPhoto = x.EvidenciaCierre != null }).ToListAsync();
+        Rounds = loaded.Select(x => new RoundRow(x.Round.Id, x.Round.Ruta.Nombre, users.GetValueOrDefault(x.Round.PrefectoId, "Usuario"), x.Round.ProgramadoPara.ToLocalTime(), x.Round.Estado, x.Round.CerradoEn?.ToLocalTime(), x.HasPhoto)).ToList();
         var incidents = db.Incidencias.AsNoTracking().Include(x => x.Rondin).ThenInclude(x => x.Ruta).Include(x => x.Evidencias).AsQueryable();
         if (!IsAdmin) incidents = incidents.Where(x => x.Rondin.PrefectoId == store.Session.UserId);
         Incidents = (await incidents.OrderByDescending(x => x.CreadoEn).ToListAsync()).Select(x => new IncidentRow(x.Id, x.Rondin.Ruta.Nombre, x.Tipo, x.Descripcion, x.Prioridad, x.Estado, x.Evidencias.Count, x.RondinId)).ToList();

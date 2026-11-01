@@ -45,6 +45,19 @@ public sealed partial class LocalStore
         // Columnas añadidas después de la beta: se agregan solo si faltan, sin tocar los datos existentes.
         await EnsureColumnAsync(db, "PuntosControl", "CodigoVerificacion", "TEXT NULL");
         await EnsureColumnAsync(db, "RegistrosPunto", "Verificado", "INTEGER NOT NULL DEFAULT 0");
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "EvidenciasCierre" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_EvidenciasCierre" PRIMARY KEY,
+                "RondinId" TEXT NOT NULL,
+                "NombreOriginal" TEXT NOT NULL, "TipoMime" TEXT NOT NULL,
+                "Contenido" BLOB NOT NULL, "Sha256" TEXT NOT NULL, "SubidaEn" TEXT NOT NULL,
+                "CreadoEn" TEXT NOT NULL, "CreadoPorId" TEXT NULL,
+                "ActualizadoEn" TEXT NULL, "RowVersion" BLOB NULL,
+                CONSTRAINT "FK_EvidenciasCierre_Rondines_RondinId" FOREIGN KEY ("RondinId") REFERENCES "Rondines" ("Id") ON DELETE CASCADE,
+                CONSTRAINT "CK_EvidenciasCierre_Tamano" CHECK (length(Contenido) > 0 AND length(Contenido) <= 5242880)
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_EvidenciasCierre_RondinId" ON "EvidenciasCierre" ("RondinId");
+            """);
     }
     private static async Task EnsureColumnAsync(FtrackerDbContext db, string table, string column, string definition)
     {
