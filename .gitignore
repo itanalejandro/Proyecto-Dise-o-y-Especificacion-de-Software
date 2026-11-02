@@ -3,7 +3,10 @@
 .dotnet-cli/
 .nuget-packages/
 artifacts/
-dist/
+dist/*
+# Entrega final publicada; los demás instaladores y ZIP se conservan solo localmente.
+!dist/Ftracker-Setup-3.0.0-beta.4-win-x64.exe
+!dist/Ftracker-Setup-3.0.0-beta.4-win-x64.exe.sha256
 *.db
 *.db-shm
 *.db-wal

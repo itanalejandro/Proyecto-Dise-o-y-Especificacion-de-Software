@@ -57,7 +57,7 @@ internal sealed class RoutePointsWindow : Window
         codes.Children.Add(Btn("Imprimir códigos (QR)", PrintCodes, () => grid.Items.Cast<Row>().Any(x => x.ConCodigo)));
         panel.Children.Add(codes);
         foreach (var (header, path) in new[] { ("N.º", nameof(Row.Orden)), ("Punto", nameof(Row.Nombre)), ("Verificación", nameof(Row.Verificacion)) })
-            grid.Columns.Add(new DataGridTextColumn { Header = header, Binding = new Binding(path), MinWidth = path == nameof(Row.Orden) ? 60 : 120, Width = path == nameof(Row.Nombre) ? new DataGridLength(1, DataGridLengthUnitType.Star) : DataGridLength.Auto });
+            grid.Columns.Add(new DataGridTextColumn { Header = header, Binding = new Binding(path), MinWidth = path == nameof(Row.Orden) ? 60 : 120, Width = DataGridLength.Auto });
         grid.Margin = new Thickness(0, 10, 0, 0);
         grid.SelectionChanged += (_, _) => Sync();
         panel.Children.Add(grid);

@@ -72,6 +72,7 @@ internal static class Program
         Check(tabs.Items.Count == 6, "Navegación de administrador");
         Check(tabs.Items.Cast<TabItem>().Select(x => (string)x.Header).SequenceEqual(new[] { "Usuarios", "Rutas y puntos", "Rondines", "Incidencias", "Reportes y respaldo", "Bitácora" }), "Orden de navegación de administrador");
         Check(Descendants<Button>(window).Any(x => (string?)x.Content == "Cambiar contraseña"), "Cambio de contraseña disponible desde el encabezado");
+        await CheckAuditTimes(store, window, themeArtifacts);
         tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Rondines"); window.UpdateLayout();
         Check(!Descendants<System.Windows.Controls.Primitives.UniformGrid>(window).Any(), "Encabezado sin tarjetas de resumen");
         Check(!Descendants<Button>(window).Single(x => (string?)x.Content == "Reasignar").IsEnabled, "No reasigna sin seleccionar rondín");
@@ -226,6 +227,50 @@ internal static class Program
         await CheckClosingDate(store, routeId);
         Console.WriteLine("COMPROBACIONES WPF COMPLETADAS");
     }
+    private static async Task CheckAuditTimes(LocalStore store, MainWindow window, string previewDir)
+    {
+        string prefectId;
+        await using (var db = store.Open()) prefectId = await db.Users.Where(x => x.Rol == Roles.Prefecto).Select(x => x.Id).SingleAsync();
+        var now = DateTime.UtcNow; var beforeLocal = TimeZoneInfo.ConvertTimeFromUtc(now, TimeZoneInfo.Local);
+        var boundary = new DateTime(2026, 1, 1, 0, 30, 45, DateTimeKind.Utc);
+        var live = new Auditoria { ActorId = store.Session.UserId!, Fecha = now, Accion = "PruebaHora", Entidad = "Sistema", EntidadId = Guid.NewGuid().ToString(), Detalle = "Detalle original conservado" };
+        var historic = new Auditoria { ActorId = prefectId, Fecha = boundary, Accion = "PruebaFecha", Entidad = "Sistema", EntidadId = "histórico" };
+        var missing = new Auditoria { ActorId = Guid.NewGuid().ToString(), Fecha = boundary.AddMinutes(-1), Accion = "PruebaUsuario", Entidad = "Sistema", EntidadId = "sin cuenta" };
+        await using (var db = store.Open()) { db.Auditorias.AddRange(live, historic, missing); await db.SaveChangesAsync(); }
+        var vm = (MainViewModel)window.DataContext; await vm.RefreshAsync();
+        Check(vm.Audit.Single(x => x.Id == live.Id).Usuario == "Administración de prueba · Administrador" &&
+            vm.Audit.Single(x => x.Id == historic.Id).Usuario == "Prefecto de prueba · Prefecto", "Bitácora identifica al autor real de cada acción con nombre y rol");
+        Check(vm.Audit.Single(x => x.Id == missing.Id).Usuario == "Usuario no disponible", "Acciones de cuentas ausentes no se atribuyen a otro usuario");
+        Check(vm.Audit.Single(x => x.Id == live.Id).Fecha == beforeLocal && vm.Audit.Single(x => x.Id == live.Id).Fecha.Kind == DateTimeKind.Local,
+            "Movimiento recién guardado se muestra en hora local del equipo");
+        Check(vm.Audit.Single(x => x.Id == historic.Id).Fecha == TimeZoneInfo.ConvertTimeFromUtc(boundary, TimeZoneInfo.Local),
+            "Conversión de bitácora contempla el cambio de día y año sin un desfase fijo");
+        await vm.RefreshAsync();
+        await using (var db = store.Open())
+        {
+            Check((await db.Auditorias.SingleAsync(x => x.Id == live.Id)).Fecha.Ticks == now.Ticks &&
+                (await db.Auditorias.SingleAsync(x => x.Id == historic.Id)).Fecha.Ticks == boundary.Ticks,
+                "Consultar y recargar bitácora conserva intactos los instantes UTC originales");
+            Check((await db.Auditorias.SingleAsync(x => x.Id == live.Id)).Detalle == "Detalle original conservado", "Reemplazar la columna visible conserva el detalle del registro original");
+        }
+        var tabs = Descendants<TabControl>(window).Single(); tabs.SelectedItem = tabs.Items.Cast<TabItem>().Single(x => (string)x.Header == "Bitácora"); window.UpdateLayout();
+        var grid = Descendants<DataGrid>(window).Single(x => x.ItemsSource is IReadOnlyList<AuditRow>);
+        Check(grid.Items.Cast<AuditRow>().First().Id == live.Id, "Bitácora conserva el orden cronológico por instante guardado");
+        Check(Descendants<TextBlock>(grid).Any(x => x.Text == beforeLocal.ToString("dd/MM/yyyy HH:mm:ss")), "Tabla presenta fecha y hora local con segundos");
+        Check(Descendants<TextBlock>(window).Any(x => x.Text.StartsWith("Última actualización:")), "Pie distingue la recarga de datos de la hora del movimiento");
+        Check((string)grid.Columns[4].Header == "Usuario" && !grid.Columns.Any(x => (string)x.Header == "Detalle"), "Columna Usuario reemplaza Detalle en la bitácora");
+        var originalWidth = grid.Columns[3].Width; grid.Columns[3].Width = new DataGridLength(1100); window.UpdateLayout();
+        var scroll = Descendants<ScrollViewer>(grid).First(x => x.ComputedHorizontalScrollBarVisibility == Visibility.Visible);
+        scroll.ScrollToHorizontalOffset(scroll.ScrollableWidth); window.UpdateLayout();
+        await Until(() => scroll.HorizontalOffset > 0);
+        Check(Descendants<System.Windows.Controls.Primitives.ScrollBar>(grid).Any(x => x.Orientation == Orientation.Horizontal && x.IsVisible) && scroll.HorizontalOffset > 0,
+            "Barra horizontal permite desplazarse para consultar columnas de contenido largo");
+        SaveImage(window, Path.Combine(previewDir, "interfaz-bitacora-desplazamiento.png"));
+        grid.Columns[3].Width = originalWidth; scroll.ScrollToHorizontalOffset(0); window.UpdateLayout();
+        SaveImage(window, Path.Combine(previewDir, "interfaz-bitacora-hora-local.png"));
+        ThemeManager.Apply(true); window.UpdateLayout(); SaveImage(window, Path.Combine(previewDir, "interfaz-bitacora-usuario-oscuro.png")); ThemeManager.Apply(false);
+    }
+
     private static async Task CheckClosingDate(LocalStore store, Guid routeId)
     {
         var vm = new MainViewModel(store); await vm.RefreshAsync();

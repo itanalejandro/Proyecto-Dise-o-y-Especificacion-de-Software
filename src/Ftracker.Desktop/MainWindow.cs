@@ -104,8 +104,12 @@ public sealed partial class MainWindow : Window
     }
     private void BuildAudit()
     {
-        var panel = NewTab("Bitácora", "Últimos 200 movimientos del sistema. Fechas expresadas en UTC.");
-        var table = Table(("Fecha", "Fecha"), ("Acción", "Accion"), ("Entidad", "Entidad"), ("ID", "EntidadId"), ("Detalle", "Detalle")); table.Height = 420; table.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Audit))); panel.Children.Add(table);
+        var panel = NewTab("Bitácora", "Últimos 200 movimientos del sistema. Fecha y hora local del equipo.");
+        var table = Table(("Fecha y hora", "Fecha"), ("Acción", "Accion"), ("Entidad", "Entidad"), ("ID", "EntidadId"), ("Usuario", "Usuario"));
+        ((DataGridTextColumn)table.Columns[0]).Binding = new Binding(nameof(AuditRow.Fecha)) { StringFormat = "{0:dd/MM/yyyy HH:mm:ss}" };
+        table.Columns[0].SortMemberPath = nameof(AuditRow.Fecha); table.Columns[0].MinWidth = 170;
+        table.Columns[4].MinWidth = 220;
+        table.Height = 420; table.SetBinding(ItemsControl.ItemsSourceProperty, new Binding(nameof(vm.Audit))); panel.Children.Add(table);
     }
     private async Task Refresh()
     {
@@ -120,7 +124,7 @@ public sealed partial class MainWindow : Window
         routes.SelectedItem = vm.Routes.FirstOrDefault(x => x.Id == routeId);
         incidents.SelectedItem = vm.Incidents.FirstOrDefault(x => x.Id == incidentId);
         if (!vm.IsAdmin) await LoadPoints();
-        status.Text = "Actualizado a las " + DateTime.Now.ToString("HH:mm"); UpdateAlertBanner();
+        status.Text = "Última actualización: " + DateTime.Now.ToString("HH:mm:ss"); UpdateAlertBanner();
         UpdateActions();
     }
     private async Task LoadPoints()
@@ -143,6 +147,7 @@ public sealed partial class MainWindow : Window
     {
         var cell = new FrameworkElementFactory(typeof(DockPanel));
         cell.SetValue(DockPanel.LastChildFillProperty, true);
+        cell.SetValue(FrameworkElement.MarginProperty, new Thickness(8, 0, 8, 0));
         var button = new FrameworkElementFactory(typeof(Button));
         button.SetValue(ContentControl.ContentProperty, "Evidencia");
         button.SetValue(FrameworkElement.StyleProperty, FindResource("EvidenceLink"));
@@ -161,12 +166,13 @@ public sealed partial class MainWindow : Window
         cell.AppendChild(button);
         var notes = new FrameworkElementFactory(typeof(TextBlock));
         notes.SetBinding(TextBlock.TextProperty, new Binding(nameof(PointRow.Observaciones)));
+        notes.SetBinding(FrameworkElement.ToolTipProperty, new Binding(nameof(PointRow.Observaciones)));
         notes.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
         notes.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
         cell.AppendChild(notes);
         points.Columns[2] = new DataGridTemplateColumn
         {
-            Header = "Observación", MinWidth = 220, Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+            Header = "Observación", MinWidth = 220, Width = DataGridLength.Auto,
             CellTemplate = new DataTemplate { VisualTree = cell }
         };
     }
@@ -402,7 +408,14 @@ public sealed partial class MainWindow : Window
     private static T Selected<T>(DataGrid grid) where T : class => grid.SelectedItem as T ?? throw new ReglaNegocioException("Selecciona un registro en la tabla.");
     private static DataGrid Table(params (string Header, string Path)[] columns)
     {
-        var table = new DataGrid(); foreach (var c in columns) table.Columns.Add(new DataGridTextColumn { Header = c.Header, Binding = new Binding(c.Path) { Converter = new FriendlyValueConverter() }, MinWidth = c.Path == "Descripcion" ? 180 : 90, Width = new DataGridLength(1, DataGridLengthUnitType.Star) }); return table;
+        var table = new DataGrid();
+        var textStyle = new Style(typeof(TextBlock), System.Windows.Application.Current.TryFindResource(typeof(TextBlock)) as Style);
+        textStyle.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(8, 0, 8, 0)));
+        textStyle.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(nameof(TextBlock.Text)) { RelativeSource = RelativeSource.Self }));
+        foreach (var c in columns)
+            table.Columns.Add(new DataGridTextColumn { Header = c.Header, Binding = new Binding(c.Path) { Converter = new FriendlyValueConverter() },
+                ElementStyle = textStyle, MinWidth = c.Path == "Descripcion" ? 180 : 90, Width = DataGridLength.Auto });
+        return table;
     }
 }
 

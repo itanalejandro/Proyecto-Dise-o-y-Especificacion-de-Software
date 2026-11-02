@@ -23,6 +23,7 @@ public sealed record PointRow(Guid Id, Guid PuntoId, string Nombre, RegistroResu
 }
 public sealed record PointIncident(Guid Id, string Detalle);
 public sealed record IncidentRow(Guid Id, string Ruta, string Tipo, string Descripcion, IncidenciaPrioridad Prioridad, IncidenciaEstado Estado, int Archivos, Guid RondinId);
+public sealed record AuditRow(Guid Id, string ActorId, DateTime Fecha, string Accion, string Entidad, string EntidadId, string? Detalle, string Usuario);
 
 public sealed class MainViewModel(LocalStore store) : INotifyPropertyChanged
 {
@@ -31,7 +32,7 @@ public sealed class MainViewModel(LocalStore store) : INotifyPropertyChanged
     public IReadOnlyList<RouteRow> Routes { get; private set; } = [];
     public IReadOnlyList<RoundRow> Rounds { get; private set; } = [];
     public IReadOnlyList<IncidentRow> Incidents { get; private set; } = [];
-    public IReadOnlyList<Auditoria> Audit { get; private set; } = [];
+    public IReadOnlyList<AuditRow> Audit { get; private set; } = [];
     public string Summary { get; private set; } = "";
     public bool IsAdmin => store.Session.Role == Roles.Administrador;
     public int Programados => Rounds.Count(x => x.Estado == RondinEstado.Programado);
@@ -52,7 +53,12 @@ public sealed class MainViewModel(LocalStore store) : INotifyPropertyChanged
         var incidents = db.Incidencias.AsNoTracking().Include(x => x.Rondin).ThenInclude(x => x.Ruta).Include(x => x.Evidencias).AsQueryable();
         if (!IsAdmin) incidents = incidents.Where(x => x.Rondin.PrefectoId == store.Session.UserId);
         Incidents = (await incidents.OrderByDescending(x => x.CreadoEn).ToListAsync()).Select(x => new IncidentRow(x.Id, x.Rondin.Ruta.Nombre, x.Tipo, x.Descripcion, x.Prioridad, x.Estado, x.Evidencias.Count, x.RondinId)).ToList();
-        Audit = IsAdmin ? await db.Auditorias.AsNoTracking().OrderByDescending(x => x.Fecha).Take(200).ToListAsync() : [];
+        // SQLite returns unspecified DateTime values. Audit instants are stored in UTC;
+        // convert only the display model, never the persisted audit record.
+        var actors = Users.ToDictionary(x => x.Id, x => $"{x.Nombre} · {x.Rol}");
+        Audit = IsAdmin ? (await db.Auditorias.AsNoTracking().OrderByDescending(x => x.Fecha).Take(200).ToListAsync())
+            .Select(x => new AuditRow(x.Id, x.ActorId, DateTime.SpecifyKind(x.Fecha, DateTimeKind.Utc).ToLocalTime(), x.Accion, x.Entidad, x.EntidadId, x.Detalle,
+                actors.GetValueOrDefault(x.ActorId, "Usuario no disponible"))).ToList() : [];
         Summary = $"{Rounds.Count(x => x.Estado == RondinEstado.Programado)} programados     ·     {Rounds.Count(x => x.Estado == RondinEstado.EnCurso)} en curso     ·     {Rounds.Count(x => x.Estado == RondinEstado.Cerrado)} cerrados     ·     {Incidents.Count(x => x.Estado == IncidenciaEstado.Abierta || x.Estado == IncidenciaEstado.EnRevision)} incidencias abiertas";
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }

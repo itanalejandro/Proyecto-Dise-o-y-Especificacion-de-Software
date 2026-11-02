@@ -4,7 +4,9 @@ Sistema local de rondines e incidencias para FIME. Interfaz WPF con ventanas nat
 
 ## Iniciar
 
-Haz doble clic en **Iniciar-Ftracker.cmd** en esta carpeta. Busca primero `artifacts/Ftracker-actualizado/Ftracker.exe`, después `artifacts/Ftracker/Ftracker.exe` y, si no hay publicación, usa la compilación Debug. Al clonar por primera vez, ejecuta **Preparar-Ftracker.cmd** para restaurar paquetes y compilar: los ejecutables no se incluyen en Git.
+Para instalar sin compilar, utiliza el [instalador final 3.0.0-beta.4](dist/Ftracker-Setup-3.0.0-beta.4-win-x64.exe), acompañado de su [archivo SHA-256](dist/Ftracker-Setup-3.0.0-beta.4-win-x64.exe.sha256). Cierra Ftracker antes de actualizar una instalación existente y conserva un respaldo de los datos.
+
+Para ejecutar el proyecto, haz doble clic en **Iniciar-Ftracker.cmd** en esta carpeta. Busca primero `artifacts/Ftracker-actualizado/Ftracker.exe`, después `artifacts/Ftracker/Ftracker.exe` y, si no hay publicación, usa la compilación Debug. Al clonar por primera vez para desarrollar, ejecuta **Preparar-Ftracker.cmd** para restaurar paquetes y compilar: las carpetas de compilación y publicación no se incluyen en Git.
 
 En el primer inicio crea tu cuenta administradora: nombre, correo y contraseña de al menos 12 caracteres. No hay contraseñas predeterminadas. En inicios posteriores aparece la ventana de acceso.
 
@@ -24,17 +26,17 @@ La integración de distribución se basa en el paquete v3 del equipo, sin import
 .\Generar-Instalador.cmd --portable-only
 
 # Para una nueva entrega, utiliza una versión distinta:
-.\Generar-Instalador.cmd --version 3.0.0-beta.3
+.\Generar-Instalador.cmd --version 3.0.0-beta.5
 
 # Comprobaciones internas del empaquetador, sin generar entregas:
 dotnet run --project tools/Ftracker.Packaging -- --self-test
 ```
 
-La versión predeterminada del paquete es `3.0.0-beta.2`. El resultado queda en `dist/Ftracker-Setup-<versión>-win-x64.exe` y `dist/Ftracker-<versión>-win-x64-portable.zip`, con archivos `.sha256` para comprobar su contenido. Si falta el compilador, el modo completo termina con un error claro; `--portable-only` no genera un EXE. `--iscc` permite indicar un compilador existente. Se ejecutan ambos programas de pruebas antes de distribuir; `--skip-tests` los omite expresamente y muestra una advertencia. El generador no sobrescribe entregas existentes: usa otra versión. No borra directorios de publicación anteriores y conserva el staging bajo `artifacts/installer-build` para revisión. Antes de publicar el ZIP comprueba todos sus archivos contra el manifiesto; las sumas de comprobación no sustituyen una firma de confianza.
+La versión predeterminada del paquete es `3.0.0-beta.4`. El resultado queda en `dist/Ftracker-Setup-<versión>-win-x64.exe` y `dist/Ftracker-<versión>-win-x64-portable.zip`, con archivos `.sha256` para comprobar su contenido. Si falta el compilador, el modo completo termina con un error claro; `--portable-only` no genera un EXE. `--iscc` permite indicar un compilador existente. Se ejecutan ambos programas de pruebas antes de distribuir; `--skip-tests` los omite expresamente y muestra una advertencia. El generador no sobrescribe entregas existentes: usa otra versión. No borra directorios de publicación anteriores y conserva el staging bajo `artifacts/installer-build` para revisión. Antes de publicar el ZIP comprueba todos sus archivos contra el manifiesto; las sumas de comprobación no sustituyen una firma de confianza.
 
 El instalador es **por cuenta de Windows**, sin pedir elevación: instala en `%LOCALAPPDATA%\Programs\Ftracker`, añade la entrada de desinstalación y el acceso del menú Inicio; el escritorio es opcional. Cierra Ftracker antes de actualizar o desinstalar: no se fuerza su cierre. Los datos permanecen en `%LOCALAPPDATA%\Ftracker`, fuera del programa, y la desinstalación no incluye una orden para borrarlos. Respaldar antes de actualizar sigue siendo necesario. No se ha validado una actualización de instalaciones antiguas de otros paquetes con configuraciones diferentes.
 
-Para el portable, extrae **todo** el ZIP y abre `Iniciar-Ftracker.cmd` o `app/Ftracker.exe`. Incluye runtime .NET, instrucciones, versión y un manifiesto SHA-256; no incluye datos de operación. Cambiar de carpeta no traslada la base y no convierte los datos en una base portable. `dist` y los binarios no se incluyen en Git; comparte una entrega binaria solo después de probarla.
+Para el portable, extrae **todo** el ZIP y abre `Iniciar-Ftracker.cmd` o `app/Ftracker.exe`. Incluye runtime .NET, instrucciones, versión y un manifiesto SHA-256; no incluye datos de operación. Cambiar de carpeta no traslada la base y no convierte los datos en una base portable. El repositorio incluye únicamente el instalador final `3.0.0-beta.4` y su `.sha256` dentro de `dist`; los portable, ZIP del instalador y versiones anteriores se mantienen ignorados como copias locales.
 
 **Firma y seguridad:** los paquetes generados por este proceso no tienen firma digital de confianza. No se crean/importan certificados, no se retiran marcas de seguridad de Windows ni se prometen excepciones de Smart App Control. Si Windows bloquea una entrega, coordina una distribución firmada o una revisión autorizada de la política. El instalador no reemplaza esa validación.
 
@@ -69,6 +71,18 @@ La fotografía original, nombre de archivo, autor, fecha UTC y SHA-256 se guarda
 La validación automática comprueba formato, tamaño y dimensiones; no reconoce las firmas ni garantiza que la imagen sea de la hoja correcta. El administrador debe consultar visualmente el original. El hash detecta discrepancias entre el contenido y el hash guardados, pero no certifica autenticidad ni protege frente a quien pueda editar ambos en la base local.
 
 La inicialización agrega la tabla de forma aditiva e idempotente. Los rondines cerrados antes de esta función conservan su fecha y muestran **Sin evidencia anterior**; no se les inventan fotografías ni se reabren. Los respaldos antiguos se siguen restaurando y reciben la tabla al inicializar. Respaldar antes de actualizar sigue siendo necesario. Eliminar definitivamente un rondín elimina también su hoja de firmas, como advierte la confirmación; cancelar conserva su historial.
+
+### Bitácora
+
+**Bitácora** muestra la fecha y hora local del equipo en `dd/MM/yyyy HH:mm:ss`, también para movimientos anteriores. Los instantes originales permanecen guardados en UTC; la conversión se realiza únicamente al preparar la vista, con la zona horaria configurada en Windows. Se conserva el orden por instante de registro. **Última actualización** en el pie indica cuándo se recargaron los datos; no es un reloj en marcha ni la hora del último movimiento. Las operaciones de la aplicación recargan los datos al terminar y el botón Actualizar datos permite hacerlo manualmente.
+
+Esta corrección se entrega en `3.0.0-beta.3`. El 01/11/2026 pasaron las comprobaciones WPF de conversión de movimientos nuevos y anteriores, cambio de día/año, visualización con segundos y conservación de las fechas UTC originales después de recargar. Se generaron instalador y portable reutilizando esa ejecución de pruebas (`--skip-tests`), se verificaron manifiesto y hashes, y se actualizó la publicación local del proyecto. La instalación sobre datos de operación no se ejecutó como parte de esa verificación.
+
+Desde `3.0.0-beta.4`, la columna **Usuario** reemplaza a Detalle y muestra el nombre y rol de quien realizó la acción, resueltos mediante su identificador original. El nombre y rol provienen del catálogo actual; los cambios de perfil se reflejan en la consulta, no son una fotografía histórica de esos datos. Si la cuenta ya no existe, muestra **Usuario no disponible**. El detalle original se conserva en la base.
+
+Las tablas ofrecen barra horizontal cuando el contenido supera el ancho disponible. Las columnas se ajustan al texto y pueden ampliarse arrastrando el borde de sus encabezados. Las celdas de texto de la ventana principal muestran el valor completo al dejar el puntero encima. Esto permite consultar identificadores, nombres y observaciones largos sin forzarlos al ancho de la ventana.
+
+Verificación de `3.0.0-beta.4` (01/11/2026): pasaron las comprobaciones WPF de identificación de administradores y prefectos por ActorId, cuentas ausentes, conservación del detalle original y desplazamiento horizontal efectivo, junto con el resto de la suite de interfaz. Se revisó la bitácora en ambos temas. Se generaron instalador y portable con `--skip-tests` para reutilizar esa ejecución, se verificaron manifiesto y archivos `.sha256` y se actualizó la publicación del proyecto. No se ejecutó el instalador sobre los datos reales.
 
 ### Reasignar o cancelar recorridos
 
@@ -163,7 +177,7 @@ Cada integrante necesita Windows 10/11, Git y el **SDK de .NET 10** (el runtime 
 
 Después de clonar y abrir la carpeta, puede hacer doble clic en **Preparar-Ftracker.cmd**: restaura paquetes, compila y abre la versión Debug recién construida. La primera restauración necesita internet. También puede usar los tres comandos de Desarrollo. Después de modificar código, usar `dotnet run` o Preparar para ejecutar los cambios; Iniciar puede abrir una publicación anterior si aún no se ha vuelto a publicar.
 
-Subir a Git: `src` (incluidos los recursos del logo), `tests`, `scripts`, `tools`, `installer`, `Ftracker.sln`, `NuGet.config`, `global.json`, scripts CMD, `.gitignore`, `.gitattributes`, `.editorconfig` y documentación. `.gitignore` excluye binarios de compilación, entregas `dist`, paquetes descargados, bases y logs. No subir bases locales, evidencias reales, contraseñas ni configuración privada. Si alguno ya fue agregado a Git, ignorarlo no lo retira automáticamente del historial.
+Subir a Git: `src` (incluidos los recursos del logo), `tests`, `scripts`, `tools`, `installer`, `Ftracker.sln`, `NuGet.config`, `global.json`, scripts CMD, `.gitignore`, `.gitattributes`, `.editorconfig` y documentación. Como entrega lista para usar, se incluyen exclusivamente `dist/Ftracker-Setup-3.0.0-beta.4-win-x64.exe` y su `.sha256`. `.gitignore` excluye el resto de `dist`, binarios de compilación, paquetes descargados, bases y logs. No subir bases locales, evidencias reales, contraseñas ni configuración privada. Si alguno ya fue agregado a Git, ignorarlo no lo retira automáticamente del historial.
 
 **Git comparte código, no datos de operación.** Cada integrante crea su administrador y tiene su propia base local. Los usuarios, rutas y rondines de una computadora no aparecen automáticamente en las otras. Para entregar la aplicación a alguien que solo la usará, compartir un ZIP de toda la carpeta publicada, por fuera del código fuente o como archivo de una entrega.
 
