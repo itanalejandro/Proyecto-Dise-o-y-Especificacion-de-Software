@@ -109,7 +109,7 @@ internal sealed class ClockTimeWindow : Window
 
 internal sealed class ClockDial : FrameworkElement
 {
-    private static readonly Brush Accent = new SolidColorBrush(Color.FromRgb(0x24, 0x5F, 0x9D));
+    private static readonly Brush Accent = ThemeManager.Get("Accent");
     private ClockPart part;
     private bool dragging;
     public TimeOnly Value { get; private set; }
@@ -138,7 +138,7 @@ internal sealed class ClockDial : FrameworkElement
             var pos = Position(n / 12d, r - 34); var active = Math.Abs(n - selected) < .01;
             if (active) dc.DrawEllipse(Accent, null, pos, 18, 18);
             var label = Part == ClockPart.Hours ? (n == 0 ? 12 : n).ToString() : (n * 5).ToString("00");
-            var text = new FormattedText(label, CultureInfo.GetCultureInfo("es-MX"), FlowDirection.LeftToRight, new Typeface("Segoe UI"), 17, active ? Brushes.White : ThemeManager.Get("Text"), VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            var text = new FormattedText(label, CultureInfo.GetCultureInfo("es-MX"), FlowDirection.LeftToRight, new Typeface("Segoe UI"), 17, active ? ThemeManager.Get("AccentText") : ThemeManager.Get("Text"), VisualTreeHelper.GetDpi(this).PixelsPerDip);
             dc.DrawText(text, new Point(pos.X - text.Width / 2, pos.Y - text.Height / 2));
         }
         DrawHand(dc, (Value.Hour % 12 + Value.Minute / 60d) / 12, r * .49, Part == ClockPart.Hours);

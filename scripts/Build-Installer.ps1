@@ -1,7 +1,7 @@
 # Optional compatibility wrapper. Generar-Instalador.cmd does not use PowerShell.
 [CmdletBinding()]
 param(
-    [string]$Version = '3.0.0-beta.4',
+    [string]$Version = '3.0.0-beta.5',
     [switch]$PortableOnly,
     [switch]$SkipTests,
     [string]$IsccPath

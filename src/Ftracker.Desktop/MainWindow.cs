@@ -34,7 +34,7 @@ public sealed partial class MainWindow : Window
         var header = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 18) };
         DockPanel.SetDock(header, Dock.Top); root.Children.Add(header);
         var actions = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
-        actions.Children.Add(ThemeManager.ToggleButton()); actions.Children.Add(PasswordButton());
+        actions.Children.Add(ThemeManager.ThemeMenu()); actions.Children.Add(PasswordButton());
         var update = ActionButton("Actualizar datos", Refresh); update.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(update);
         var logout = ActionButton("Cerrar sesión", Logout); logout.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(logout);
         DockPanel.SetDock(actions, Dock.Right); header.Children.Add(actions);

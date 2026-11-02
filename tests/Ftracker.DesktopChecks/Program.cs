@@ -44,26 +44,8 @@ internal static class Program
         var window = new MainWindow(store) { ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500, Top = 0 };
         window.Show(); await Task.Delay(250); window.UpdateLayout();
         var tabs = Descendants<TabControl>(window).Single();
-        var themeBrush = window.Background;
-        var themeToggle = ThemeManager.ToggleButton(persist: false);
-        var oldThemeToggle = Descendants<Button>(window).Single(x => AutomationProperties.GetName(x) == "Cambiar a modo oscuro");
-        var themeActions = (Panel)oldThemeToggle.Parent;
-        var themeIndex = themeActions.Children.IndexOf(oldThemeToggle);
-        themeActions.Children.RemoveAt(themeIndex);
-        themeActions.Children.Insert(themeIndex, themeToggle);
-        themeToggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); window.UpdateLayout();
-        await Task.Delay(240);
-        var thumb = (Border)themeToggle.Template.FindName("Thumb", themeToggle);
-        Check((string)themeToggle.Content == "Oscuro" && Math.Abs(((TranslateTransform)thumb.RenderTransform).X - 22) < .1, "Interruptor oscuro muestra etiqueta y desliza la perilla");
-        Check(ReferenceEquals(themeBrush, window.Background) && ((SolidColorBrush)window.Background).Color == Color.FromRgb(21, 28, 37), "Modo oscuro actualiza ventana abierta sin recrear datos");
         var themeArtifacts = Path.Combine(Environment.CurrentDirectory, "artifacts"); Directory.CreateDirectory(themeArtifacts);
-        SaveImage(window, Path.Combine(themeArtifacts, "interfaz-modo-oscuro.png"));
-        Check(AutomationProperties.GetName(themeToggle) == "Cambiar a modo claro", "Control de tema anuncia la siguiente acción");
-        themeToggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); window.UpdateLayout();
-        await Task.Delay(240);
-        Check((string)themeToggle.Content == "Claro" && Math.Abs(((TranslateTransform)thumb.RenderTransform).X) < .1, "Interruptor claro devuelve la perilla a su posición");
-        SaveImage(window, Path.Combine(themeArtifacts, "interfaz-modo-claro.png"));
-        Check(((SolidColorBrush)window.Background).Color == Color.FromRgb(243, 246, 250), "Modo claro se restaura en la misma ventana");
+        await CheckThemeMenu(store, window, themeArtifacts);
         var access = new AccessWindow(store, false) { Owner = window, ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -2500 };
         access.Show(); access.UpdateLayout();
         Check(Descendants<TextBlock>(access).Any(x => x.Text == "Correo o nombre completo"), "Acceso permite identificar correo o nombre completo");
@@ -227,6 +209,97 @@ internal static class Program
         await CheckClosingDate(store, routeId);
         Console.WriteLine("COMPROBACIONES WPF COMPLETADAS");
     }
+    private static async Task CheckThemeMenu(LocalStore store, MainWindow window, string previewDir)
+    {
+        await Until(() => ((MainViewModel)window.DataContext).Users.Count > 0);
+        var themeBrush = window.Background;
+        var originalButton = Descendants<Button>(window).Single(x => AutomationProperties.GetName(x) == "Tema");
+        var originalHost = (Grid)originalButton.Parent; var actions = (Panel)originalHost.Parent;
+        var index = actions.Children.IndexOf(originalHost); actions.Children.RemoveAt(index);
+        var host = (Grid)ThemeManager.ThemeMenu(persist: false); actions.Children.Insert(index, host);
+        var opener = host.Children.OfType<Button>().Single(); var popup = host.Children.OfType<System.Windows.Controls.Primitives.Popup>().Single();
+        opener.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Until(() => popup.IsOpen); await Task.Delay(180); window.UpdateLayout();
+        var mode = Descendants<Button>(popup.Child).Single(x => AutomationProperties.GetName(x).StartsWith("Cambiar a modo"));
+        var blue = Descendants<Button>(popup.Child).Single(x => AutomationProperties.GetName(x).StartsWith("Paleta azul"));
+        var fime = Descendants<Button>(popup.Child).Single(x => AutomationProperties.GetName(x).StartsWith("Paleta FIME"));
+        var grid = Descendants<DataGrid>(window).Single(); var users = grid.ItemsSource;
+        grid.SelectedItem = ((MainViewModel)window.DataContext).Users.First();
+
+        mode.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(240); window.UpdateLayout();
+        var thumb = (Border)mode.Template.FindName("Thumb", mode);
+        Check(ThemeManager.IsDark && ThemeManager.Palette == ThemePalette.Azul && (string)mode.Content == "Oscuro" && Math.Abs(((TranslateTransform)thumb.RenderTransform).X - 22) < .1,
+            "Menú Tema conserva el interruptor suave y su recorrido corto");
+        Check(ReferenceEquals(themeBrush, window.Background) && ((SolidColorBrush)window.Background).Color == Color.FromRgb(21, 28, 37), "Tema azul conserva la paleta anterior y actualiza la ventana abierta");
+        Check(AutomationProperties.GetName(mode) == "Cambiar a modo claro", "Interruptor anuncia la siguiente acción dentro del menú");
+        CheckThemeContrast(); SaveImage(window, Path.Combine(previewDir, "interfaz-modo-oscuro.png"));
+        mode.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(240); window.UpdateLayout();
+        Check(!ThemeManager.IsDark && Math.Abs(((TranslateTransform)thumb.RenderTransform).X) < .1, "Interruptor claro devuelve la perilla a su posición");
+        CheckThemeContrast(); SaveImage(window, Path.Combine(previewDir, "interfaz-modo-claro.png"));
+
+        fime.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); window.UpdateLayout();
+        Check(ThemeManager.Palette == ThemePalette.Fime && !ThemeManager.IsDark && ((SolidColorBrush)ThemeManager.Get("Accent")).Color == Color.FromRgb(0, 102, 51), "FIME claro usa el verde #006633 de la referencia");
+        CheckThemeContrast(); CheckSelectedColors();
+        SaveImage(window, Path.Combine(previewDir, "interfaz-fime-claro.png"));
+        SaveElement((FrameworkElement)popup.Child, ThemeManager.Get("Surface"), Path.Combine(previewDir, "interfaz-menu-tema-fime-claro.png"));
+        mode.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); await Task.Delay(240); window.UpdateLayout();
+        Check(((SolidColorBrush)ThemeManager.Get("Page")).Color == Color.FromRgb(40, 49, 61) &&
+            ((SolidColorBrush)ThemeManager.Get("Surface")).Color == Color.FromRgb(49, 59, 72) &&
+            ((SolidColorBrush)ThemeManager.Get("Accent")).Color == Color.FromRgb(83, 173, 53) &&
+            ((SolidColorBrush)ThemeManager.Get("AccentBorder")).Color == Color.FromRgb(52, 163, 42), "FIME oscuro aplica exactamente los verdes y grises solicitados");
+        CheckThemeContrast(); CheckSelectedColors();
+        Check(ReferenceEquals(users, grid.ItemsSource), "Cambiar modo y paleta conserva las cuentas y la selección existentes");
+        SaveImage(window, Path.Combine(previewDir, "interfaz-fime-oscuro.png"));
+        SaveElement((FrameworkElement)popup.Child, ThemeManager.Get("Surface"), Path.Combine(previewDir, "interfaz-menu-tema-fime-oscuro.png"));
+        blue.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); window.UpdateLayout();
+        Check(ThemeManager.Palette == ThemePalette.Azul && ThemeManager.IsDark && !System.Windows.Application.Current.Resources.Contains(SystemColors.HighlightBrushKey),
+            "Volver a azul restaura la selección del sistema y conserva el modo elegido");
+        var frame = (FrameworkElement)popup.Child;
+        frame.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(frame)!, Environment.TickCount, Key.Escape) { RoutedEvent = Keyboard.KeyDownEvent });
+        Check(!popup.IsOpen, "Escape cierra el menú de personalización");
+
+        var preference = Path.Combine(store.DataDirectory, "tema-prueba.txt");
+        foreach (var legacy in new[] { "oscuro", "claro" })
+        {
+            File.WriteAllText(preference, legacy); ThemeManager.LoadPreference(preference);
+            Check(ThemeManager.IsDark == (legacy == "oscuro") && ThemeManager.Palette == ThemePalette.Azul, "Preferencia anterior compatible: " + legacy);
+        }
+        ThemeManager.Apply(true, ThemePalette.Fime); ThemeManager.SavePreference(preference);
+        ThemeManager.Apply(false, ThemePalette.Azul); ThemeManager.LoadPreference(preference);
+        Check(ThemeManager.IsDark && ThemeManager.Palette == ThemePalette.Fime && File.ReadAllText(preference) == "oscuro;fime", "La preferencia guarda y recupera modo y paleta en un archivo de prueba aislado");
+        File.WriteAllText(preference, "valor-desconocido"); ThemeManager.LoadPreference(preference);
+        Check(!ThemeManager.IsDark && ThemeManager.Palette == ThemePalette.Azul, "Preferencia desconocida vuelve a azul claro sin impedir el inicio");
+        ThemeManager.Apply(false, ThemePalette.Fime);
+        var clockPreviews = Path.Combine(previewDir, "fime"); Directory.CreateDirectory(clockPreviews); CheckClock(window, clockPreviews);
+        ThemeManager.Apply(false, ThemePalette.Azul); grid.SelectedItem = null; window.UpdateLayout();
+
+        void CheckSelectedColors()
+        {
+            var cell = Descendants<DataGridCell>(grid).First(x => x.IsSelected);
+            Check(((SolidColorBrush)cell.Background).Color == ((SolidColorBrush)ThemeManager.Get("Accent")).Color &&
+                ((SolidColorBrush)cell.Foreground).Color == ((SolidColorBrush)ThemeManager.Get("AccentText")).Color, "Fila seleccionada legible con la paleta FIME " + (ThemeManager.IsDark ? "oscura" : "clara"));
+        }
+    }
+    private static void CheckThemeContrast()
+    {
+        foreach (var (foreground, background) in new[] { ("Text", "Surface"), ("Text", "Page"), ("Muted", "Surface"), ("Link", "Surface"), ("Link", "Selected"), ("AccentText", "Accent") })
+        {
+            var a = Luminance(((SolidColorBrush)ThemeManager.Get(foreground)).Color); var b = Luminance(((SolidColorBrush)ThemeManager.Get(background)).Color);
+            Check((Math.Max(a, b) + .05) / (Math.Min(a, b) + .05) >= 4.5, $"Contraste de texto {foreground}/{background}: {ThemeManager.Palette} {(ThemeManager.IsDark ? "oscuro" : "claro")}");
+        }
+        var surface = ((SolidColorBrush)ThemeManager.Get("Surface")).Color;
+        var hoverText = Blend(((SolidColorBrush)ThemeManager.Get("AccentText")).Color, surface);
+        var hoverBackground = Blend(((SolidColorBrush)ThemeManager.Get("Accent")).Color, surface);
+        Check((Math.Max(Luminance(hoverText), Luminance(hoverBackground)) + .05) / (Math.Min(Luminance(hoverText), Luminance(hoverBackground)) + .05) >= 4.5,
+            $"Texto del botón mantiene contraste al pasar el puntero: {ThemeManager.Palette} {(ThemeManager.IsDark ? "oscuro" : "claro")}");
+        static Color Blend(Color foreground, Color background) => Color.FromRgb((byte)Math.Round(foreground.R * .88 + background.R * .12),
+            (byte)Math.Round(foreground.G * .88 + background.G * .12), (byte)Math.Round(foreground.B * .88 + background.B * .12));
+        static double Luminance(Color color)
+        {
+            static double Channel(byte value) { var v = value / 255d; return v <= .04045 ? v / 12.92 : Math.Pow((v + .055) / 1.055, 2.4); }
+            return .2126 * Channel(color.R) + .7152 * Channel(color.G) + .0722 * Channel(color.B);
+        }
+    }
+
     private static async Task CheckAuditTimes(LocalStore store, MainWindow window, string previewDir)
     {
         string prefectId;
@@ -473,10 +546,11 @@ internal static class Program
         dialog.Date("Hasta (opcional)");
         var prefect = dialog.Choice("Prefecto", new[] { "Todos los prefectos", "Juan Alberto de prueba", "Rubén de prueba" });
         dialog.Show(); dialog.UpdateLayout();
+        foreach (var palette in new[] { ThemePalette.Azul, ThemePalette.Fime })
         foreach (var dark in new[] { true, false })
         {
-            ThemeManager.Apply(dark); dialog.UpdateLayout();
-            var suffix = dark ? "oscuro" : "claro";
+            ThemeManager.Apply(dark, palette); dialog.UpdateLayout();
+            var suffix = (palette == ThemePalette.Fime ? "fime-" : "") + (dark ? "oscuro" : "claro");
             var toggle = (System.Windows.Controls.Primitives.ToggleButton)prefect.Template.FindName("DropDownToggle", prefect);
             var frame = (Border)toggle.Template.FindName("Frame", toggle);
             Check(((SolidColorBrush)frame.Background).Color == ((SolidColorBrush)ThemeManager.Get("Surface")).Color, "Desplegable cerrado sigue el modo " + suffix);
@@ -511,7 +585,7 @@ internal static class Program
             await Task.Delay(150); // Let DatePicker finish returning focus before opening the next popup.
         }
         Check(since.SelectedDate == new DateTime(2026, 10, 21) && prefect.SelectedIndex == 1, "Cambio de tema conserva fecha y prefecto elegidos");
-        dialog.Close();
+        dialog.Close(); ThemeManager.Apply(false, ThemePalette.Azul);
     }
     private static void SaveImage(Window window, string path)
     {
