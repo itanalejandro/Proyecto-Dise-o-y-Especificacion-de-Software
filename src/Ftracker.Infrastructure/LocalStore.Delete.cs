@@ -61,6 +61,7 @@ public sealed partial class LocalStore
         {
             try
             {
+                if (IsBlobKey(file)) { if (Blobs is not null) await Blobs.DeleteAsync(file); continue; }
                 var path = ResolveEvidencePath(file);
                 if (File.Exists(path)) File.Delete(path);
             }

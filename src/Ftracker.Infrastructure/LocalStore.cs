@@ -10,6 +10,7 @@ public sealed class LocalSession : ISession
     public ApplicationUser? User { get; private set; }
     public string? UserId => User?.Id;
     public string? Role => User?.Rol;
+    public string? UserName => User?.NombreCompleto;
     internal void SignIn(ApplicationUser user) => User = user;
     public void SignOut() => User = null;
 }
@@ -23,10 +24,16 @@ public sealed partial class LocalStore
     public LocalSession Session { get; } = new();
     public LocalStore(string? directory = null)
     {
-        SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
+        EnsureSqliteProvider();
         DataDirectory = directory ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ftracker");
         Directory.CreateDirectory(DataDirectory);
         options = new DbContextOptionsBuilder<FtrackerDbContext>().UseSqlite(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = DbPath, ForeignKeys = true }.ToString()).Options;
+    }
+    private static readonly object ProviderLock = new();
+    private static bool providerReady;
+    private static void EnsureSqliteProvider()
+    {
+        lock (ProviderLock) { if (providerReady) return; SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3()); providerReady = true; }
     }
     public FtrackerDbContext Open() => new(options);
     public async Task InitializeAsync()
@@ -100,10 +107,11 @@ public sealed partial class LocalStore
             // Compare in .NET so accented names also support case-insensitive matching on SQLite.
             var names = await db.Users.AsNoTracking().Select(x => new { x.Id, x.NombreCompleto }).ToListAsync();
             var matches = names.Where(x => string.Equals(x.NombreCompleto.Trim(), email.Trim(), StringComparison.OrdinalIgnoreCase)).Take(2).ToList();
-            if (matches.Count > 1) throw new ReglaNegocioException("Para entrar con este nombre utiliza tu correo registrado.");
             if (matches.Count == 1) user = await db.Users.SingleOrDefaultAsync(x => x.Id == matches[0].Id);
         }
-        if (user is null || !user.Activo || !Verify(password, user.PasswordHash)) throw new ReglaNegocioException("Correo o contraseña incorrectos, o cuenta desactivada.");
+        // Siempre se calcula un hash (aunque la cuenta no exista o esté desactivada) para que el tiempo de respuesta no revele qué cuentas existen.
+        var valid = Verify(password, user?.PasswordHash ?? DummyHash.Value);
+        if (user is null || !user.Activo || !valid) throw new ReglaNegocioException("Correo o contraseña incorrectos, o cuenta desactivada.");
         Session.SignIn(user);
     }
     public async Task AddUserAsync(string name, string email, string password, string role)
@@ -146,16 +154,21 @@ public sealed partial class LocalStore
         var header = new byte[8]; using (var stream = file.OpenRead()) stream.ReadExactly(header.AsSpan(0, (int)Math.Min(8, file.Length)));
         var valid = ext switch { ".pdf" => header[0] == 37 && header[1] == 80 && header[2] == 68 && header[3] == 70, ".png" => header.AsSpan().SequenceEqual(new byte[] {137,80,78,71,13,10,26,10}), _ => header[0] == 255 && header[1] == 216 && header[2] == 255 };
         if (!valid) throw new ReglaNegocioException("El contenido no coincide con el tipo de archivo.");
-        var directory = Path.Combine(DataDirectory, "evidencias"); Directory.CreateDirectory(directory);
-        var destination = Path.Combine(directory, Guid.NewGuid() + ext);
-        File.Copy(path, destination);
+        string destination;
+        if (Blobs is null)
+        {
+            var directory = Path.Combine(DataDirectory, "evidencias"); Directory.CreateDirectory(directory);
+            destination = Path.Combine(directory, Guid.NewGuid() + ext);
+            File.Copy(path, destination);
+        }
+        else destination = await Blobs.SaveAsync(Guid.NewGuid() + ext, ext == ".pdf" ? "application/pdf" : ext == ".png" ? "image/png" : "image/jpeg", await File.ReadAllBytesAsync(path));
         try
         {
             incident.Rondin.ActualizadoEn = DateTime.UtcNow;
             db.Evidencias.Add(new Evidencia { IncidenciaId = incidentId, NombreOriginal = file.Name, RutaArchivo = destination, TipoMime = ext == ".pdf" ? "application/pdf" : ext == ".png" ? "image/png" : "image/jpeg", CreadoPorId = Session.UserId });
             Audit(db, "AdjuntarEvidencia", incidentId.ToString()); await db.SaveChangesAsync();
         }
-        catch { File.Delete(destination); throw; }
+        catch { if (Blobs is null) File.Delete(destination); else await Blobs.DeleteAsync(destination); throw; }
     }
     public void RequireAdmin() { if (Session.Role != Roles.Administrador) throw new ReglaNegocioException("Se requiere administrador."); }
     private void Audit(FtrackerDbContext db, string action, string id, string? detail = null) => db.Auditorias.Add(new Auditoria { ActorId = Session.UserId!, Accion = action, Entidad = "Catalogo", EntidadId = id, Detalle = detail });

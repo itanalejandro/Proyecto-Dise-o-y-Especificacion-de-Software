@@ -14,7 +14,7 @@ namespace Ftracker.Desktop;
 
 internal sealed class CroquisWindow : Window
 {
-    private readonly LocalStore store;
+    private readonly IFtrackerStore store;
     private readonly Guid targetId;
     private readonly bool editing;
     private bool canRegister;
@@ -36,16 +36,16 @@ internal sealed class CroquisWindow : Window
     private CroquisPunto? Selected => (list.SelectedItem as PointItem)?.Point;
     private sealed record PointItem(CroquisPunto Point, string Label);
 
-    public static async Task<CroquisWindow> ForRouteAsync(LocalStore store, Guid id, string name) =>
+    public static async Task<CroquisWindow> ForRouteAsync(IFtrackerStore store, Guid id, string name) =>
         new(store, id, name, true, false, await store.GetRouteCroquisAsync(id));
 
-    public static async Task<CroquisWindow> ForRoundAsync(LocalStore store, Guid id)
+    public static async Task<CroquisWindow> ForRoundAsync(IFtrackerStore store, Guid id)
     {
         var round = await store.GetRoundCroquisAsync(id);
         return new(store, id, $"{round.Nombre} · {FriendlyValueConverter.Label(round.Estado)}", false, round.PuedeRegistrar, round.Puntos);
     }
 
-    private CroquisWindow(LocalStore store, Guid id, string name, bool editing, bool canRegister, IReadOnlyList<CroquisPunto> points)
+    private CroquisWindow(IFtrackerStore store, Guid id, string name, bool editing, bool canRegister, IReadOnlyList<CroquisPunto> points)
     {
         this.store = store; targetId = id; this.editing = editing; this.canRegister = canRegister; this.points = points.ToList();
         Title = "Croquis · " + name; Icon = Brand.Icon; Style = (Style)FindResource(typeof(Window));
@@ -198,8 +198,7 @@ internal sealed class CroquisWindow : Window
         var notes = editor.Text(result == RegistroResultado.Omitido ? "Observación (obligatoria)" : "Observación (opcional)");
         if (!editor.Save(async () =>
         {
-            await using var db = store.Open();
-            await new RondinService(db, store.Session).MarcarPuntoAsync(targetId, point.Id, new(result, notes.Text, code?.Text), store.Session.UserId!);
+            await store.MarkPointAsync(targetId, point.Id, new(result, notes.Text, code?.Text));
         })) return;
         var round = await store.GetRoundCroquisAsync(targetId);
         points = round.Puntos.ToList(); canRegister = round.PuedeRegistrar; Rebind(point.Id);
@@ -209,8 +208,7 @@ internal sealed class CroquisWindow : Window
     private async Task ReportIncident()
     {
         if (!canRegister || Selected is not { } point) return;
-        await using var db = store.Open();
-        var record = await db.RegistrosPunto.AsNoTracking().SingleOrDefaultAsync(x => x.RondinId == targetId && x.Id == point.Id)
+        var record = (await store.GetRoundPointsAsync(targetId)).FirstOrDefault(x => x.Id == point.Id)
             ?? throw new ReglaNegocioException("El punto no pertenece a este rondín.");
         if (IncidentEditor.Report(this, store, targetId, record.PuntoControlId, "Punto: " + point.Nombre))
             status.Text = "Incidencia guardada. Puedes adjuntar evidencia desde el apartado Incidencias.";

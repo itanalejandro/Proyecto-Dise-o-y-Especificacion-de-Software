@@ -8,8 +8,6 @@ using QRCoder;
 
 namespace Ftracker.Infrastructure;
 
-public sealed record PuntoCatalogo(Guid Id, int Orden, string Nombre, bool ConCodigo);
-
 public sealed partial class LocalStore
 {
     // Sin I, O, 0 ni 1 para que el código se pueda leer e imprimir sin ambigüedades.

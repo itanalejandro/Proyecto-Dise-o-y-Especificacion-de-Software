@@ -21,6 +21,12 @@ public sealed partial class LocalStore
         var evidence = await db.Evidencias.AsNoTracking().Include(x => x.Incidencia).ThenInclude(x => x.Rondin)
             .SingleOrDefaultAsync(x => x.Id == evidenceId) ?? throw new ReglaNegocioException("La evidencia no existe.");
         RequireEvidenceAccess(evidence.Incidencia);
+        if (IsBlobKey(evidence.RutaArchivo))
+        {
+            if (Blobs is null) throw new ReglaNegocioException("Esta evidencia está guardada en Google Drive. Ábrela desde el servidor de Ftracker.");
+            var content = await Blobs.ReadAsync(evidence.RutaArchivo);
+            return content.Length is > 0 and <= 5 * 1024 * 1024 ? content : throw new ReglaNegocioException("El archivo está vacío o supera el límite de 5 MB.");
+        }
         try
         {
             // Only read the app's local evidence directory; never load a URI or arbitrary path from the database.

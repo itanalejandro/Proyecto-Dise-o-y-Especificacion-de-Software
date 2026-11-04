@@ -13,6 +13,22 @@ public sealed partial class MainWindow
 {
     private readonly TextBlock alertBanner = new() { Visibility = Visibility.Collapsed, TextWrapping = TextWrapping.Wrap, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 12) };
 
+    private bool leaving;
+
+    /// <summary>El servidor cerró la sesión (caducó, se desactivó la cuenta o se restauró un respaldo): se vuelve a la pantalla de acceso.</summary>
+    internal void OnServerSessionExpired()
+    {
+        if (leaving) return;
+        leaving = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            MessageBox.Show(this, "Tu sesión expiró o fue cerrada por el servidor. Inicia sesión de nuevo.", "Ftracker", MessageBoxButton.OK, MessageBoxImage.Information);
+            store.SignOut(); Hide(); var access = new AccessWindow(store, false) { Owner = this };
+            if (access.ShowDialog() == true) { var next = new MainWindow(store); System.Windows.Application.Current.MainWindow = next; next.Show(); }
+            Close();
+        });
+    }
+
     private void AddAlertBanner(DockPanel root)
     {
         alertBanner.Foreground = ThemeManager.Get("Danger");
@@ -100,7 +116,7 @@ public sealed partial class MainWindow
         backups.Children.Add(ActionButton("Crear respaldo", CreateBackup));
         backups.Children.Add(DangerButton("Restaurar respaldo", RestoreBackup, () => true));
         panel.Children.Add(backups);
-        panel.Children.Add(Note("El respaldo es un .zip con la base de datos y todas las evidencias. No está cifrado: guárdalo en un lugar seguro. Al restaurar, se reemplazan todos los datos actuales y antes se guarda una copia de seguridad en: " + System.IO.Path.Combine(store.DataDirectory, "respaldos")));
+        panel.Children.Add(Note("El respaldo es un .zip con la base de datos y todas las evidencias. No está cifrado: guárdalo en un lugar seguro. Al restaurar, se reemplazan todos los datos actuales y antes se guarda una copia de seguridad en: " + (store is LocalStore local ? System.IO.Path.Combine(local.DataDirectory, "respaldos") : "la carpeta de datos del servidor")));
     }
 
     private static TextBlock Note(string text) => new() { Text = text, TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Get("Muted"), FontSize = 12, Margin = new Thickness(0, 4, 0, 0) };

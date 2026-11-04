@@ -5,8 +5,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Ftracker.Infrastructure;
 
-public enum ReportKind { Rondines, Puntos, Incidencias }
-
 public sealed partial class LocalStore
 {
     private static DateTime LocalDayToUtc(DateTime day) => DateTime.SpecifyKind(day.Date, DateTimeKind.Local).ToUniversalTime();

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Ftracker.Application\Ftracker.Application.csproj" />
+    <ProjectReference Include="..\Ftracker.Infrastructure\Ftracker.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup><PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.1" /></ItemGroup>
+</Project>

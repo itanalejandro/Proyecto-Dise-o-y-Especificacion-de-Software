@@ -16,7 +16,7 @@ internal sealed class RoutePointsWindow : Window
         public string Verificacion => ConCodigo ? "Con código" : "Sin código";
     }
 
-    private readonly LocalStore store;
+    private readonly IFtrackerStore store;
     private readonly Guid routeId;
     private readonly DataGrid grid = new() { AutoGenerateColumns = false, IsReadOnly = true, SelectionMode = DataGridSelectionMode.Single, Height = 300 };
     private readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0) };
@@ -24,14 +24,14 @@ internal sealed class RoutePointsWindow : Window
     private bool busy;
     private Row? Current => grid.SelectedItem as Row;
 
-    public static async Task<RoutePointsWindow> CreateAsync(LocalStore store, Guid routeId, string name)
+    public static async Task<RoutePointsWindow> CreateAsync(IFtrackerStore store, Guid routeId, string name)
     {
         var window = new RoutePointsWindow(store, routeId, name);
         await window.LoadAsync(null, false);
         return window;
     }
 
-    private RoutePointsWindow(LocalStore store, Guid routeId, string name)
+    private RoutePointsWindow(IFtrackerStore store, Guid routeId, string name)
     {
         this.store = store; this.routeId = routeId;
         Style = (Style)FindResource(typeof(Window)); Background = ThemeManager.Get("Page");

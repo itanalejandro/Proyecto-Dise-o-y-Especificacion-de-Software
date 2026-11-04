@@ -1,11 +1,11 @@
 using System.Windows;
 using System.Windows.Controls;
-using Ftracker.Infrastructure;
+using Ftracker.Application;
 
 namespace Ftracker.Desktop;
 public sealed class AccessWindow : Window
 {
-    public AccessWindow(LocalStore store, bool setup)
+    public AccessWindow(IFtrackerStore store, bool setup)
     {
         Title = setup ? "Ftracker · Configuración inicial" : "Ftracker · Acceso";
         Icon = Brand.Icon;
@@ -26,6 +26,10 @@ public sealed class AccessWindow : Window
         panel.Children.Add(caps); password.PreviewKeyUp += (_, _) => caps.Visibility = System.Windows.Input.Keyboard.IsKeyToggled(System.Windows.Input.Key.CapsLock) ? Visibility.Visible : Visibility.Collapsed;
         var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = ThemeManager.Get("Danger"), Margin = new Thickness(0, 4, 0, 8) }; panel.Children.Add(error);
         var submit = new Button { Content = setup ? "Crear cuenta y continuar" : "Entrar", IsDefault = true, HorizontalAlignment = HorizontalAlignment.Stretch }; panel.Children.Add(submit);
+        // Servidor de prefectura: sin configurar se usan los datos de este equipo.
+        var server = new Button { Content = SafeServerLabel(), Style = (Style)FindResource("SecondaryButton"), Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
+        server.Click += (_, _) => ConfigureServer(server);
+        panel.Children.Add(server);
         Loaded += (_, _) => { if (setup) name.Focus(); else email.Focus(); };
         submit.Click += async (_, _) =>
         {
@@ -40,5 +44,26 @@ public sealed class AccessWindow : Window
             catch (Exception ex) { error.Text = ex.Message; }
             finally { submit.IsEnabled = true; submit.Content = label; }
         };
+    }
+
+    private static string SafeServerLabel()
+    {
+        try { return ServerSettings.Load() is { } s ? "Servidor: " + s.Host : "Usar un servidor de prefectura…"; }
+        catch (ReglaNegocioException) { return "Servidor: configuración dañada…"; }
+    }
+
+    private void ConfigureServer(Button button)
+    {
+        ServerSettings? current = null;
+        try { current = ServerSettings.Load(); } catch (ReglaNegocioException) { }
+        var d = new Editor(this, "Servidor de Ftracker");
+        d.Label("Escribe la dirección del servidor de prefectura y la huella SHA-256 de su certificado. Si la dejas vacía, Ftracker usa los datos de este equipo.");
+        var url = d.Text("Dirección (por ejemplo https://ftracker-prefectura:8443)", current?.Url ?? "");
+        var pin = d.Text("Huella SHA-256 del certificado", current?.CertificateSha256 ?? "");
+        if (d.Save(() => { ServerSettings.Save(url.Text, pin.Text); return Task.CompletedTask; }))
+        {
+            button.Content = SafeServerLabel();
+            MessageBox.Show(this, "Listo. Cierra Ftracker y ábrelo de nuevo para usar la nueva configuración.", "Ftracker", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 }

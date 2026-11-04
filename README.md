@@ -151,6 +151,10 @@ El texto libre que empieza con `=`, `+`, `-` o `@` se exporta con un apóstrofo 
 
 **Restaurar respaldo** reemplaza *todos* los datos actuales. Antes guarda automáticamente una copia de lo actual en `%LOCALAPPDATA%\Ftracker\respaldos\antes-de-restaurar-*.zip`, valida el archivo (estructura, integridad y que haya un administrador activo) y cierra Ftracker al terminar; al abrirlo de nuevo se inicia sesión con una cuenta del respaldo. Las evidencias se resuelven por nombre dentro de la carpeta de la aplicación, así que un respaldo se puede restaurar en otro equipo.
 
+### Servidor compartido (API + SQLite + Google Drive)
+
+Por defecto cada PC usa su propia base local. Para que los datos y la bitácora se vean en todos los equipos de prefectura, la aplicación puede conectarse a un servidor de la red de prefectura (`src/Ftracker.Api`) que guarda todo en una sola base SQLite y, opcionalmente, envía las evidencias y un respaldo diario a una unidad compartida de Google Drive. Se activa desde la pantalla de acceso con **Usar un servidor de prefectura…**; sin esa configuración todo funciona como antes. Instalación, configuración de Drive, seguridad, pruebas y limitaciones: [docs/servidor.md](docs/servidor.md). Los proyectos `Ftracker.Api`, `Ftracker.Client` y `tests/Ftracker.ApiChecks` no forman parte de `Ftracker.sln`; se compilan con `dotnet build src/Ftracker.Api`.
+
 ## Datos y almacenamiento
 
 SQLite usa el componente nativo de Windows `winsqlite3.dll`. No necesita MySQL ni SQL Server.

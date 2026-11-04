@@ -5,7 +5,7 @@
     <Version>3.0.0-beta.5</Version>
     <ApplicationIcon>Assets\ftracker.ico</ApplicationIcon>
   </PropertyGroup>
-  <ItemGroup><ProjectReference Include="..\Ftracker.Infrastructure\Ftracker.Infrastructure.csproj" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="..\Ftracker.Infrastructure\Ftracker.Infrastructure.csproj" /><ProjectReference Include="..\Ftracker.Client\Ftracker.Client.csproj" /></ItemGroup>
   <ItemGroup><Resource Include="Assets\ftracker-logo.png" /><Resource Include="Assets\ftracker.ico" /></ItemGroup>
   <ItemGroup><Resource Include="Assets\croquis-fime-limpio-v1.png" /></ItemGroup>
 </Project>

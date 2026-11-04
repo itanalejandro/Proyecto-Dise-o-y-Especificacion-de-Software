@@ -27,14 +27,14 @@ internal sealed class EvidenceWindow : Window
     private bool busy;
     private bool closed;
 
-    public static async Task<EvidenceWindow> CreateAsync(LocalStore store, Guid incidentId)
+    public static async Task<EvidenceWindow> CreateAsync(IFtrackerStore store, Guid incidentId)
     {
-        var evidence = await store.GetEvidenceAsync(incidentId);
+        var evidence = await store.ListEvidenceAsync(incidentId);
         if (evidence.Count == 0) throw new ReglaNegocioException("Esta incidencia no tiene archivos adjuntos.");
         return new EvidenceWindow(store.ReadEvidenceAsync, evidence.Select(x => new EvidenceFile(x.Id, x.NombreOriginal, x.TipoMime)).ToList());
     }
 
-    public static async Task<EvidenceWindow> CreateClosureAsync(LocalStore store, Guid roundId, string route)
+    public static async Task<EvidenceWindow> CreateClosureAsync(IFtrackerStore store, Guid roundId, string route)
     {
         var info = await store.GetClosureEvidenceAsync(roundId)
             ?? throw new ReglaNegocioException("Este rondín no tiene una hoja de firmas adjunta; puede ser un cierre anterior a esta actualización.");

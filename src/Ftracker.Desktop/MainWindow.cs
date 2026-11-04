@@ -11,7 +11,7 @@ using Microsoft.Win32;
 namespace Ftracker.Desktop;
 public sealed partial class MainWindow : Window
 {
-    private readonly LocalStore store;
+    private readonly IFtrackerStore store;
     private readonly MainViewModel vm;
     private readonly TabControl tabs = new();
     private readonly DataGrid users = Table(("Nombre", "Nombre"), ("Correo", "Correo"), ("Rol", "Rol"), ("Activo", "Activo"));
@@ -23,7 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly List<(Button Button, Func<bool> Enabled)> contextualActions = [];
     private readonly List<(DataGrid Grid, TextBox Search)> searches = [];
     private bool busy;
-    public MainWindow(LocalStore store)
+    public MainWindow(IFtrackerStore store)
     {
         this.store = store; vm = new(store); DataContext = vm;
         Style = (Style)FindResource(typeof(Window));
@@ -39,7 +39,7 @@ public sealed partial class MainWindow : Window
         var logout = ActionButton("Cerrar sesión", Logout); logout.Style = (Style)FindResource("SecondaryButton"); actions.Children.Add(logout);
         DockPanel.SetDock(actions, Dock.Right); header.Children.Add(actions);
         var identity = new StackPanel(); identity.Children.Add(Brand.Header(26));
-        identity.Children.Add(new TextBlock { Text = $"{store.Session.User!.NombreCompleto} · {store.Session.Role}", FontSize = 12, Foreground = ThemeManager.Get("Muted"), Margin = new Thickness(0, 4, 0, 0) });
+        identity.Children.Add(new TextBlock { Text = $"{store.Session.UserName} · {store.Session.Role}", FontSize = 12, Foreground = ThemeManager.Get("Muted"), Margin = new Thickness(0, 4, 0, 0) });
         header.Children.Add(identity);
         status.Foreground = ThemeManager.Get("Muted"); status.FontSize = 12;
         DockPanel.SetDock(status, Dock.Bottom); root.Children.Add(status); AddAlertBanner(root); root.Children.Add(tabs);
@@ -130,16 +130,10 @@ public sealed partial class MainWindow : Window
     private async Task LoadPoints()
     {
         if (rounds.SelectedItem is not RoundRow r) { points.ItemsSource = null; return; }
-        await using var db = store.Open();
-        var linked = await db.Incidencias.AsNoTracking()
-            .Where(x => x.RondinId == r.Id && x.PuntoControlId != null && x.Evidencias.Any())
-            .OrderByDescending(x => x.CreadoEn)
-            .Select(x => new { x.Id, x.PuntoControlId, x.Tipo, x.Descripcion }).ToListAsync();
-        var rows = await db.RegistrosPunto.AsNoTracking().Where(x => x.RondinId == r.Id).OrderBy(x => x.Orden).Select(x => new PointRow(x.Id, x.PuntoControlId, x.PuntoNombre, x.Resultado, x.Observaciones, x.Verificado)).ToListAsync();
-        points.ItemsSource = rows.Select(p => p with
+        var rows = await store.GetRoundPointsAsync(r.Id);
+        points.ItemsSource = rows.Select(p => new PointRow(p.Id, p.PuntoControlId, p.Nombre, p.Resultado, p.Observaciones, p.Verificado)
         {
-            IncidenciasConEvidencia = linked.Where(i => i.PuntoControlId == p.PuntoId)
-                .Select(i => new PointIncident(i.Id, i.Tipo + ": " + i.Descripcion)).ToList()
+            IncidenciasConEvidencia = p.IncidenciasConEvidencia.Select(i => new PointIncident(i.Id, i.Detalle)).ToList()
         }).ToList();
         UpdateActions();
     }
@@ -224,7 +218,7 @@ public sealed partial class MainWindow : Window
     }
     private async Task ShowRoute()
     {
-        var r = Selected<RouteRow>(routes); await using var db = store.Open(); var list = await db.PuntosControl.Where(x => x.RutaId == r.Id).OrderBy(x => x.Orden).ToListAsync();
+        var r = Selected<RouteRow>(routes); var list = await store.GetRoutePointsAsync(r.Id);
         MessageBox.Show(this, string.Join("\n", list.Select(x => $"{x.Orden}. {x.Nombre}")), r.Nombre);
     }
     private async Task EditRouteCroquis()
@@ -248,23 +242,20 @@ public sealed partial class MainWindow : Window
         {
             if (date.SelectedDate is not DateTime selected) throw new ReglaNegocioException("Selecciona la fecha del recorrido.");
             var scheduled = DateTime.SpecifyKind(selected.Date + time.Value.ToTimeSpan(), DateTimeKind.Local).ToUniversalTime();
-            await using var db = store.Open(); await new RondinService(db, store.Session).CrearAsync(new(((RouteRow)route.SelectedItem).Id, ((UserRow)prefect.SelectedItem).Id, scheduled, notes.Text), store.Session.UserId!);
+            await store.CreateRoundAsync(new(((RouteRow)route.SelectedItem).Id, ((UserRow)prefect.SelectedItem).Id, scheduled, notes.Text));
         })) await Refresh();
     }
-    private async Task Start() { var r = Selected<RoundRow>(rounds); await using var db = store.Open(); await new RondinService(db, store.Session).IniciarAsync(r.Id, store.Session.UserId!); await Refresh(); await LoadPoints(); }
+    private async Task Start() { var r = Selected<RoundRow>(rounds); await store.StartRoundAsync(r.Id); await Refresh(); await LoadPoints(); }
     private async Task ReassignRound()
     {
         var round = Selected<RoundRow>(rounds);
-        await using var db = store.Open();
-        var current = await db.Rondines.AsNoTracking().SingleAsync(x => x.Id == round.Id);
-        var available = vm.Users.Where(x => x.Activo && x.Rol == Roles.Prefecto && x.Id != current.PrefectoId).ToList();
+        var available = vm.Users.Where(x => x.Activo && x.Rol == Roles.Prefecto && x.Id != round.PrefectoId).ToList();
         if (available.Count == 0) throw new ReglaNegocioException("Necesitas otro prefecto activo para reasignar este rondín.");
         var dialog = new Editor(this, "Reasignar rondín"); dialog.Label($"Ruta: {round.Ruta}. Prefecto actual: {round.Prefecto}.");
         var prefect = dialog.Choice("Nuevo prefecto", available, "Nombre"); var reason = dialog.Text("Motivo (obligatorio)", multiline: true); reason.MaxLength = 1000;
         if (dialog.Save(async () =>
         {
-            await using var context = store.Open();
-            await new RondinService(context, store.Session).ReasignarAsync(round.Id, new(((UserRow)prefect.SelectedItem).Id, reason.Text), store.Session.UserId!);
+            await store.ReassignRoundAsync(round.Id, new(((UserRow)prefect.SelectedItem).Id, reason.Text));
         })) await Refresh();
     }
     private async Task CancelRound()
@@ -274,15 +265,14 @@ public sealed partial class MainWindow : Window
         var reason = dialog.Text("Motivo (obligatorio)", multiline: true); reason.MaxLength = 1000;
         if (dialog.Save(async () =>
         {
-            await using var db = store.Open();
-            await new RondinService(db, store.Session).CancelarAsync(round.Id, reason.Text, store.Session.UserId!);
+            await store.CancelRoundAsync(round.Id, reason.Text);
         }, "Confirmar cancelación")) await Refresh();
     }
     private async Task Mark(RegistroResultado result)
     {
         var r = Selected<RoundRow>(rounds); var p = Selected<PointRow>(points);
         var d = new Editor(this, result == RegistroResultado.Omitido ? "Omitir punto" : "Completar punto"); d.Label(p.Nombre); var code = result == RegistroResultado.Completado && await store.RequiresCodeAsync(p.Id) ? d.Text("Código del punto (escanéalo con el lector o escríbelo)") : null; var notes = d.Text("Observación" + (result == RegistroResultado.Omitido ? " (obligatoria)" : " (opcional)"));
-        if (d.Save(async () => { await using var db = store.Open(); await new RondinService(db, store.Session).MarcarPuntoAsync(r.Id, p.Id, new(result, notes.Text, code?.Text), store.Session.UserId!); })) await Refresh();
+        if (d.Save(async () => { await store.MarkPointAsync(r.Id, p.Id, new(result, notes.Text, code?.Text)); })) await Refresh();
     }
     private async Task CloseRound()
     {
@@ -293,7 +283,7 @@ public sealed partial class MainWindow : Window
         if (d.Save(async () =>
         {
             if (photo.Photo is null) throw new ReglaNegocioException("Selecciona y revisa la fotografía de la hoja de firmas antes de cerrar.");
-            await using var db = store.Open(); await new RondinService(db, store.Session).CerrarAsync(r.Id, notes.Text, store.Session.UserId!, photo.Photo);
+            await store.CloseRoundAsync(r.Id, notes.Text, photo.Photo);
         }, "Cerrar con fotografía")) await Refresh();
     }
     private async Task ShowClosurePhoto()
@@ -313,7 +303,7 @@ public sealed partial class MainWindow : Window
         var allowed = i.Estado switch { IncidenciaEstado.Abierta => new[] { IncidenciaEstado.EnRevision, IncidenciaEstado.Resuelta }, IncidenciaEstado.EnRevision => new[] { IncidenciaEstado.Resuelta }, IncidenciaEstado.Resuelta => new[] { IncidenciaEstado.Cerrada }, _ => Array.Empty<IncidenciaEstado>() };
         if (allowed.Length == 0) return;
         var d = new Editor(this, "Seguimiento de incidencia"); d.Label("Estado actual: " + FriendlyValueConverter.Label(i.Estado)); var state = d.Choice("Nuevo estado", allowed); var comment = d.Text("Comentario (opcional)");
-        if (d.Save(async () => { await using var db = store.Open(); await new IncidenciaService(db, store.Session).CambiarEstadoAsync(i.Id, new((IncidenciaEstado)state.SelectedItem, comment.Text), store.Session.UserId!); })) await Refresh();
+        if (d.Save(async () => { await store.ChangeIncidentStateAsync(i.Id, new((IncidenciaEstado)state.SelectedItem, comment.Text)); })) await Refresh();
     }
     private async Task Attach()
     {
@@ -322,10 +312,10 @@ public sealed partial class MainWindow : Window
     }
     private async Task ShowEvidence()
     {
-        var i = Selected<IncidentRow>(incidents); var files = await store.GetEvidenceAsync(i.Id);
+        var i = Selected<IncidentRow>(incidents); var files = await store.ListEvidenceAsync(i.Id);
         if (files.Count == 0) throw new ReglaNegocioException("Esta incidencia no tiene archivos.");
         var d = new Editor(this, "Exportar evidencia"); var choice = d.Choice("Archivo", files, "NombreOriginal"); if (!d.Accept()) return;
-        var selected = (Evidencia)choice.SelectedItem; var target = new SaveFileDialog { FileName = selected.NombreOriginal, Filter = "Archivo|*.*" };
+        var selected = (EvidenciaDto)choice.SelectedItem; var target = new SaveFileDialog { FileName = selected.NombreOriginal, Filter = "Archivo|*.*" };
         if (target.ShowDialog(this) == true) { var bytes = await store.ReadEvidenceAsync(selected.Id); await System.IO.File.WriteAllBytesAsync(target.FileName, bytes); status.Text = "Evidencia exportada."; }
     }
     private async Task PreviewEvidence()
@@ -337,7 +327,7 @@ public sealed partial class MainWindow : Window
     private Task Logout()
     {
         if (!Confirm("¿Quieres cerrar tu sesión? Los registros guardados se conservarán.")) return Task.CompletedTask;
-        store.Session.SignOut(); Hide(); var access = new AccessWindow(store, false) { Owner = this };
+        store.SignOut(); Hide(); var access = new AccessWindow(store, false) { Owner = this };
         if (access.ShowDialog() == true) { var next = new MainWindow(store); System.Windows.Application.Current.MainWindow = next; next.Show(); }
         Close(); return Task.CompletedTask;
     }
@@ -348,6 +338,7 @@ public sealed partial class MainWindow : Window
         status.Text = "Procesando…";
         try { await action(); }
         catch (DbUpdateConcurrencyException) { MessageBox.Show(this, "Los datos cambiaron en otra ventana. Actualiza e intenta de nuevo.", "Ftracker"); }
+        catch (Exception) when (leaving) { } // la sesión caducó: ya se está volviendo a la pantalla de acceso
         catch (Exception ex) { MessageBox.Show(this, ex.Message, "Ftracker", MessageBoxButton.OK, MessageBoxImage.Warning); }
         finally { busy = false; tabs.IsEnabled = true; UpdateActions(); if (status.Text == "Procesando…") status.Text = "Listo."; }
     }

@@ -1,4 +1,5 @@
 using System.Windows;
+using Ftracker.Application;
 using Ftracker.Domain;
 using Ftracker.Infrastructure;
 
@@ -6,7 +7,7 @@ namespace Ftracker.Desktop;
 
 internal static class IncidentEditor
 {
-    public static bool Report(Window owner, LocalStore store, Guid roundId, Guid? pointId, string context)
+    public static bool Report(Window owner, IFtrackerStore store, Guid roundId, Guid? pointId, string context)
     {
         var dialog = new Editor(owner, "Reportar incidencia");
         dialog.Label(context);
@@ -18,9 +19,7 @@ internal static class IncidentEditor
         dialog.Label("Después de guardar puedes adjuntar fotografías o PDF desde Incidencias → Adjuntar evidencia.");
         return dialog.Save(async () =>
         {
-            await using var db = store.Open();
-            await new IncidenciaService(db, store.Session).CrearAsync(new(roundId, pointId, type.Text,
-                (IncidenciaPrioridad)priority.SelectedItem, description.Text), store.Session.UserId!);
+            await store.CreateIncidentAsync(new(roundId, pointId, type.Text, (IncidenciaPrioridad)priority.SelectedItem, description.Text));
         });
     }
 }

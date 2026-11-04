@@ -8,6 +8,7 @@ namespace Ftracker.Infrastructure;
 public sealed partial class LocalStore
 {
     private const int MinPasswordLength = 12;
+    private static readonly Lazy<string> DummyHash = new(() => HashPassword("ftracker-hash-de-relleno"));
 
     public async Task UpdateUserAsync(string id, string name, string email, string role)
     {
